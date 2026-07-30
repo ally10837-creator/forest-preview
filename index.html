@@ -776,9 +776,8 @@ body {
 </style>
 </head>
 <body>
-<div id="app-wrap" style="position:relative; min-height:100vh; overflow-x:hidden;">
-<!-- PREVIEW-ONLY：iPad 測試預覽站標示，固定在角落、不擋任何按鈕，不得回寫或合併到正式版 -->
 <div style="position:fixed; top:6px; right:6px; z-index:50; pointer-events:none; background:rgba(61,43,31,0.55); color:#fff; font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; letter-spacing:0.5px;">🧪 iPad 測試預覽站</div>
+<div id="app-wrap" style="position:relative; min-height:100vh; overflow-x:hidden;">
 <canvas id="fx-canvas" width="1322" height="908"></canvas>
 
 <!-- ═══════════ WELCOME PAGE ═══════════ -->
@@ -854,7 +853,6 @@ body {
   <div class="nav-right">
     <button class="nav-btn" onclick="openAudioSettings()" id="nav-audio-settings">🔊 音效設定</button>
     <button class="nav-btn" onclick="showPage(&#39;child&#39;)" id="nav-child">🍽️ 點餐</button>
-    <!-- PREVIEW-ONLY：媽媽後台入口在測試預覽站隱藏 -->
     <button class="nav-btn" onclick="showPage(&#39;mama&#39;)" id="nav-mama" style="display:none;">👑 媽媽</button>
   </div>
 </nav>
@@ -1328,35 +1326,21 @@ body {
 <script src="https://cdn.jsdelivr.net/npm/tone@14/build/Tone.js"></script>
 <script>
 const API = "https://script.google.com/macros/s/AKfycbzPZHE2q1BG0KfCe4sSJfsJLqSXmVSbLdixC8yrxd83cWBxho6EP79nVzWk0peTre9s/exec";
-// PREVIEW-ONLY：正式版的 PIN 常數不會出現在這個公開測試預覽站，媽媽後台整段停用（見 checkPin()／showPage()）。
+// 🧪 測試預覽站：PIN 已移除，媽媽後台一律停用（見 checkPin()／showPage()）
 const VERSION = "v56"; // ← 程式碼版本
-
-// ═══ PREVIEW-ONLY：全站 fetch() 白名單攔截器 ═══════════════════════════════
-// 不得回寫或合併到正式版 forest_repo / main。
-// 規則：預設全部封鎖，只有明確列在 READ_ONLY_ACTIONS（或完全沒有 action 參數、
-// 只帶 user／childId，對應唯讀的 getChildData）才會真的送出網路請求。
-// 任何判斷失敗的情況一律視為「非唯讀」，安全起見預設封鎖，不會不小心放行。
 (function () {
   const READ_ONLY_ACTIONS = new Set(['getSetting']);
   let apiOrigin = '', apiPath = '';
-  try {
-    const apiUrl = new URL(API);
-    apiOrigin = apiUrl.origin;
-    apiPath = apiUrl.pathname;
-  } catch (e) {}
-
+  try { const apiUrl = new URL(API); apiOrigin = apiUrl.origin; apiPath = apiUrl.pathname; } catch (e) {}
   function isReadOnlyRequest(rawUrl) {
     try {
       const u = new URL(rawUrl, window.location.href);
-      if (u.origin !== apiOrigin || u.pathname !== apiPath) return true; // 不是打到這支 API，不用管
+      if (u.origin !== apiOrigin || u.pathname !== apiPath) return true;
       const action = u.searchParams.get('action');
-      if (!action) return true; // 沒有 action 參數 = getChildData，唯讀
+      if (!action) return true;
       return READ_ONLY_ACTIONS.has(action);
-    } catch (e) {
-      return false; // 判斷失敗，預設封鎖
-    }
+    } catch (e) { return false; }
   }
-
   const _origFetch = window.fetch.bind(window);
   window.fetch = function (input, init) {
     const url = typeof input === 'string' ? input : (input && input.url) || '';
@@ -1368,7 +1352,6 @@ const VERSION = "v56"; // ← 程式碼版本
     return _origFetch(input, init);
   };
 })();
-// ═══════════════════════════════════════════════════════════════════════════
 
 // ── GOLD COIN SVG helper ──
 function C(size=16) {
@@ -1626,11 +1609,9 @@ function memberAvatar(id, size=36) {
 }
 
 // ── PAGE ROUTING ──
-// ⚠️ PREVIEW-ONLY：iPad 測試預覽站專用調整，不得回寫或合併到正式版 forest_repo / main。
-// 媽媽後台在預覽站完全停用（不是換一組密碼，是整段攔截，不會顯示 PIN 輸入畫面）。
 function showPage(page) {
   if (page === 'mama') {
-    try { showToast('🧪 媽媽後台在測試預覽站已停用', 'warn'); } catch(e) {}
+    try { showToast('🧪 媽媽後台在測試預覽站已停用', 'warn'); } catch (e) {}
     return;
   }
   cancelPendingVoiceSequence(); // Audio UX v1.0：切頁時取消尚未播放的延遲 Voice（哨音序列／排隊中的語音）
@@ -2560,9 +2541,8 @@ document.getElementById('pin-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') checkPin();
 });
 
-// PREVIEW-ONLY：不比對任何密碼，媽媽後台在測試預覽站整段停用（正常情況下 showPage('mama')
-// 已經先攔截、不會顯示這個畫面，這裡是第二層保險，就算被直接呼叫也不會解鎖）。
 function checkPin() {
+  // 🧪 測試預覽站：媽媽後台一律停用，不論輸入什麼都不會解鎖
   document.getElementById('pin-err').textContent = '🧪 媽媽後台在測試預覽站已停用';
   const inp = document.getElementById('pin-input');
   inp.classList.add('shake');
@@ -3198,6 +3178,11 @@ function openBirthdayCard(childId) {
   } catch(e) { /* 生日卡片異常不得影響進入餐館流程 */ }
 }
 
+// 生日拉炮紙花：沿用既有 burst() 粒子系統，改用多色（品牌色系）取代單色金幣光，做出紙花感。
+function _burstBirthdayConfetti() {
+  const colors = ['#ffb830', '#ff7f7f', '#52c49a', '#5bb8ff', '#e09600'];
+  colors.forEach(c => burst(16, c));
+}
 function _openBirthdayEnvelope(childId) {
   const envelope = document.getElementById('birthday-envelope');
   const content = document.getElementById('birthday-content');
@@ -3205,7 +3190,7 @@ function _openBirthdayEnvelope(childId) {
   envelope.style.display = 'none';
   content.classList.add('open');
   const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (!reduceMotion) burst(60, '#ffb830'); // 彩帶/金幣亮光，尊重減少動畫偏好時不放
+  if (!reduceMotion) _burstBirthdayConfetti(); // 多色拉炮紙花，尊重減少動畫偏好時不放
 }
 
 function closeBirthdayCard(childId) {
@@ -4264,14 +4249,7 @@ const VOICE_ASSETS = {
   hedgehogBankWelcome:      { file: 'sounds/voice/hedgehog_bank_welcome.mp3',      volume: 0.9 },
   hedgehogWeeklyBalance:    { file: 'sounds/voice/hedgehog_weekly_balance.mp3',    volume: 0.9 },
   hedgehogSpendingReminder: { file: 'sounds/voice/hedgehog_spending_reminder.mp3', volume: 0.9 },
-  // 生日語音（候選版）：只預留 key 與觸發介面，正式台詞／音檔稍後才製作，目前這個檔案不存在。
-  // ready:false——playVoiceAsset() 會在建立 Audio／發出網路請求之前就安靜跳過，不是等播放失敗
-  // 後才 catch；不會發 404、不會觸發 ducking、也不會佔用 _voiceActiveKey。呼叫端（enterRestaurant）
-  // 自己判斷 ready 是否為 false，決定要不要退回一般歡迎語音。
-  // prime:false——同樣原因，不納入 _primeAudioForMobileAutoplay() 的預播清單。
-  // ⚠️ 之後正式音檔／台詞就緒時，把這兩個 false 都改成 true（或整行拿掉，預設值就是可用）即可，
-  // 不需要再改 playVoiceAsset() 或 enterRestaurant() 的邏輯。
-  bearBirthday:             { file: 'sounds/voice/bear_birthday.mp3', volume: 0.9, prime: false, ready: false },
+  foxBirthday:              { file: 'sounds/voice/fox_birthday.mp3',               volume: 0.9 },
 };
 const _voiceAssetPool = {};
 // 每個語音 key 的 priming 狀態機（見 _primeAudioForMobileAutoplay()／_startVoice()）：
@@ -4469,7 +4447,7 @@ function _primeAudioForMobileAutoplay() {
   // enterRestaurant() 裡緊接著被真的播放，跟下面 Voice 的情況不同，維持原本簡單的寫法。
   ['sfxWhistle', 'orderSuccess'].forEach(key => prime(key, AUDIO_ASSETS_MIN[key], _audioAssetPool));
 
-  // Voice：bearRestaurantWelcome（未來 bearBirthday 就緒後也是）會在同一次 enterRestaurant() 裡
+  // Voice：bearRestaurantWelcome、foxBirthday 都會在同一次 enterRestaurant() 裡
   // 緊接著被 playVoiceAsset() 真的播放，如果 priming 的靜音 play()/pause() 非同步結束得比正式播放晚，
   // 會把正式播放的聲音暫停、歸零、_voiceActiveKey 卡住不清除。這裡額外做幾件事解決：
   // ① _voicePrimePromises／_voicePrimeSucceeded 這組狀態機記住每個 key 目前是「進行中」「成功過」
@@ -4518,8 +4496,7 @@ function _primeAudioForMobileAutoplay() {
       ? playResult.then(onSuccess, onFail)
       : Promise.resolve().then(onSuccess);
   };
-  // prime:false 的語音（目前只有生日）不納入預播——那些是偶發、非每次進入都會播的語音，
-  // 音檔可能還不存在，也不需要每次「進入餐館」都預播。
+  // prime:false 的語音不納入預播——保留給未來偶發、非每次進入都會播、音檔可能還不存在的語音使用。
   Object.keys(VOICE_ASSETS).filter(key => VOICE_ASSETS[key].prime !== false)
     .forEach(key => primeVoice(key, VOICE_ASSETS[key]));
 }
@@ -4767,12 +4744,9 @@ async function enterRestaurant() {
   updateBackgroundAudio(true); // 首次強制套用，確保背景音第一次 play() 發生在這次使用者互動流程內
 
   playAudioAsset('welcomeEnter');
-  // 生日語音優先於一般歡迎語音，兩者互斥、不會同時播放。候選版 bearBirthday 音檔尚未就緒
-  // （VOICE_ASSETS.bearBirthday.ready === false），這種情況明確退回一般歡迎語音，避免生日當天
-  // 因為生日語音還沒錄好就完全沒有任何語音——等正式音檔上線、ready 改回 true 後，
-  // 這裡會自動改播生日語音，不需要再改這段邏輯。
-  if (isBirthdayToday(currentChild) && VOICE_ASSETS.bearBirthday.ready !== false) {
-    playVoiceAsset('bearBirthday');
+  // 生日語音（狐狸媽媽）優先於一般歡迎語音，兩者互斥、不會同時播放。
+  if (isBirthdayToday(currentChild) && VOICE_ASSETS.foxBirthday.ready !== false) {
+    playVoiceAsset('foxBirthday');
   } else {
     playVoiceAsset('bearRestaurantWelcome'); // Audio UX v1.0：熊大廚固定歡迎語音，30 分鐘持久化 Cooldown 防止 F5／重複進入重播
   }
