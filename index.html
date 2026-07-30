@@ -31,7 +31,7 @@ body {
 }
 
 /* ── CANVAS ── */
-#fx-canvas { position:absolute; inset:0; pointer-events:none; z-index:200; width:100%; }
+#fx-canvas { position:absolute; inset:0; pointer-events:none; z-index:950; width:100%; }
 
 /* ── NAV BAR ── */
 .navbar {
@@ -1657,6 +1657,7 @@ async function switchChild(id) {
   updateCartFab(); // 切換後顯示該孩子自己的購物車數量
   updateBirthdayFab(); // 切換後依新孩子重新判斷小蛋糕按鈕要不要顯示
   maybeShowBirthdayCard(id); // 若切過去的孩子今天生日、且今天還沒關過卡片，個別觸發（不影響另一位孩子的狀態）
+  _maybePlayBirthdayVoice(id); // enterRestaurant() 當下 currentChild 固定是蔓蔓，若真正壽星是昊昊，這裡補播他的生日語音
   renderSubTab(currentSubTab); // 先用現有資料立刻畫出畫面，避免空白等待
   await loadAll();             // 再重新抓取最新資料，三個頁籤（餐館/家事/我的訂單）一起同步更新
 }
@@ -4133,6 +4134,7 @@ function playAudioAsset(key) {
       audio.src = track.file;
     }
     audio.volume = track.volume * getCategoryVolume(track.category); // Ambient 分類沒有存過值，乘 1.0 等於不變
+    audio.muted = false; // 正式播放一律強制取消靜音，不管 priming 收尾時 muted 留在什麼狀態都以此為準
     audio.loop = !!track.loop;
     audio.onerror = () => {
       if (_audioAssetWarned.has(key)) return;
@@ -4372,6 +4374,7 @@ async function _startVoice(voiceKey, eventKey) {
     let audio = _voiceAssetPool[voiceKey];
     if (!audio) { audio = new Audio(def.file); _voiceAssetPool[voiceKey] = audio; }
     audio.volume = def.volume * getCategoryVolume('voice');
+    audio.muted = false; // 正式播放一律強制取消靜音，不管 priming 收尾時 muted 留在什麼狀態都以此為準
     audio.currentTime = 0;
     audio.onended = _onVoiceEnded;
     audio.onabort = _onVoiceEnded; // abort 也視為一種結束路徑，確保一定會清理 active 狀態
@@ -4444,12 +4447,13 @@ function _primeAudioForMobileAutoplay() {
       if (!audio) { audio = new Audio(def.file); pool[key] = audio; }
       const restoreVolume = audio.volume;
       audio.volume = 0;
+      audio.muted = true; // volume:0 在部分行動瀏覽器（尤其 iOS Safari）不保證真正無聲，muted 才是可靠的靜音保證
       const p = audio.play();
       if (p && typeof p.then === 'function') {
-        p.then(() => { audio.pause(); audio.currentTime = 0; audio.volume = restoreVolume; })
-         .catch(() => { audio.volume = restoreVolume; }); // 仍被擋也不影響後續正常播放嘗試，安靜忽略
+        p.then(() => { audio.pause(); audio.currentTime = 0; audio.volume = restoreVolume; audio.muted = false; })
+         .catch(() => { audio.volume = restoreVolume; audio.muted = false; }); // 仍被擋也不影響後續正常播放嘗試，安靜忽略
       } else {
-        audio.pause(); audio.currentTime = 0; audio.volume = restoreVolume;
+        audio.pause(); audio.currentTime = 0; audio.volume = restoreVolume; audio.muted = false;
       }
     } catch(e) {}
   };
@@ -4484,6 +4488,7 @@ function _primeAudioForMobileAutoplay() {
     if (!audio) { audio = new Audio(def.file); _voiceAssetPool[key] = audio; }
     const restoreVolume = audio.volume;
     audio.volume = 0;
+    audio.muted = true; // volume:0 在部分行動瀏覽器（尤其 iOS Safari）不保證真正無聲，muted 才是可靠的靜音保證
     let playResult;
     try { playResult = audio.play(); } catch(e) { playResult = null; }
     const onSuccess = () => {
@@ -4491,13 +4496,16 @@ function _primeAudioForMobileAutoplay() {
         audio.pause();
         audio.currentTime = 0;
         audio.volume = restoreVolume;
+        audio.muted = false;
       }
-      // 正式播放已經搶先佔用這個 key：這裡完全不碰這個 Audio。
+      // 正式播放已經搶先佔用這個 key：這裡完全不碰這個 Audio。就算 muted 還沒還原也沒關係，
+      // _startVoice() 開始真正播放前一定會自己把 muted 強制設回 false，不依賴這裡的還原時機。
       _voicePrimeSucceeded.add(key); // 真的成功過，之後永久跳過
       delete _voicePrimePromises[key]; // 「進行中」狀態結束
     };
     const onFail = () => {
       audio.volume = restoreVolume;
+      audio.muted = false;
       // 不加入 _voicePrimeSucceeded——不標記為成功。只清除「進行中」狀態，讓下一次使用者手勢
       // 呼叫 primeVoice() 時，兩個檢查都會通過，重新真的嘗試一次 play()。
       delete _voicePrimePromises[key];
@@ -4517,6 +4525,10 @@ function _primeAudioForMobileAutoplay() {
 // 不影響「目前正在播放中」的 Voice，那不是「延遲中」的語音。
 function cancelPendingVoiceSequence() {
   if (_pandaSequenceTimer) { clearTimeout(_pandaSequenceTimer); _pandaSequenceTimer = null; }
+  // 排隊中但還沒真的開始播放的項目，等於這次嘗試被取消——一定要連同清掉 _voicePlayAttemptInFlight，
+  // 否則這個 eventKey 會被永久誤判成「還在進行中」，之後同一個事件不管呼叫端怎麼重試都會被
+  // playVoiceAsset() 的 in-flight 檢查安靜擋下，這輩子（本次網頁生命週期）都播不出來。
+  _voiceQueue.forEach(({ eventKey }) => _voicePlayAttemptInFlight.delete(eventKey));
   _voiceQueue = [];
 }
 
@@ -4748,6 +4760,16 @@ function pandaOfficerSVG(size=72) {
   </svg>`;
 }
 
+// 生日語音是「每個孩子各自的」事件，不像 bearRestaurantWelcome 是整個 App 只播一次的通用歡迎詞：
+// enterRestaurant() 當下 currentChild 固定是預設的蔓蔓，如果真正壽星是昊昊，要等使用者切到昊昊分頁
+// （switchChild()）才第一次判斷到「今天是他生日」。用 childId 區分 eventKey，讓蔓蔓、昊昊的生日語音
+// 互不干擾，各自在本次網頁生命週期只播一次，也不會因為在兩個分頁間切來切去而重複播放。
+function _maybePlayBirthdayVoice(childId) {
+  if (isBirthdayToday(childId) && VOICE_ASSETS.foxBirthday.ready !== false) {
+    playVoiceAsset('foxBirthday', 'foxBirthday_' + childId);
+  }
+}
+
 // ── WELCOME PAGE ──
 async function enterRestaurant() {
   try { await Tone.start(); } catch(e) {}
@@ -4758,7 +4780,7 @@ async function enterRestaurant() {
   playAudioAsset('welcomeEnter');
   // 生日語音（狐狸媽媽）優先於一般歡迎語音，兩者互斥、不會同時播放。
   if (isBirthdayToday(currentChild) && VOICE_ASSETS.foxBirthday.ready !== false) {
-    playVoiceAsset('foxBirthday');
+    _maybePlayBirthdayVoice(currentChild);
   } else {
     playVoiceAsset('bearRestaurantWelcome'); // Audio UX v1.0：熊大廚固定歡迎語音，30 分鐘持久化 Cooldown 防止 F5／重複進入重播
   }
