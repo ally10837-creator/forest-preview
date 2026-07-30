@@ -1353,6 +1353,18 @@ const VERSION = "v56"; // ← 程式碼版本
   };
 })();
 
+// 🧪 測試預覽站專用：網址加 ?testBirthday=candice 或 ?testBirthday=harris 可強制觸發生日顯示，
+// 方便沒有主控台可用的裝置（如 iPad）測試。只影響前端「要不要顯示」的判斷（見 isBirthdayToday()），
+// 不影響後端 claimBirthdayReward() 的真實日期判斷，測試時按下領取仍不會真的發放金幣。
+(function () {
+  try {
+    const testChild = new URLSearchParams(window.location.search).get('testBirthday');
+    if (testChild === 'candice' || testChild === 'harris') {
+      window.__forestTestBirthdayChildId = testChild;
+    }
+  } catch (e) {}
+})();
+
 // ── GOLD COIN SVG helper ──
 function C(size=16) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 20 20" style="display:inline-block;vertical-align:middle;flex-shrink:0;" xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="9.5" fill="#F5C518" stroke="#C89000" stroke-width="1.5"/><circle cx="10" cy="10" r="6.5" fill="#FFD94A" stroke="#C89000" stroke-width="0.8"/><text x="10" y="14.5" text-anchor="middle" font-size="8.5" font-weight="900" fill="#8A5C00" font-family="sans-serif">✦</text></svg>`;
