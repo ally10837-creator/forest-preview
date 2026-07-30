@@ -3944,6 +3944,14 @@ function resizeCanvas() {
 }
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
+// <script> 執行到這裡時，瀏覽器不保證已經跑完第一次 layout，此時量到的 wrap.offsetWidth／
+// offsetHeight 有機率是 0（尤其行動瀏覽器、或分頁一開始不在前景），會讓 canvas 永久卡在 0 尺寸
+// ——之後除非使用者真的 resize 視窗，否則整個 burst() 粒子效果（拉炮紙花、金幣獎勵光等）都會
+// 完全不可見，且不會有任何錯誤訊息可供排查。這裡曾經改用 requestAnimationFrame 想延到下一次
+// 畫面繪製之後再量一次，但 rAF 在分頁不可見／非前景時可能永遠不會觸發，反而更不可靠；改用
+// window 的 load 事件（頁面完整載入、layout 一定已經跑完，且不受分頁可見度影響）重新量一次，
+// 兩者都做才是真的保險。
+window.addEventListener('load', resizeCanvas);
 
 // ── KEEP FAB + MODALS + TOAST VISUALLY "FIXED" USING SCROLL OFFSET ──
 // Since position:fixed breaks in iframe, we use position:absolute + scroll tracking
@@ -4773,6 +4781,7 @@ function _maybePlayBirthdayVoice(childId) {
 // ── WELCOME PAGE ──
 async function enterRestaurant() {
   try { await Tone.start(); } catch(e) {}
+  resizeCanvas(); // 保險重新量一次 #fx-canvas 尺寸——進餐廳這個當下版面一定已經穩定，避免萬一頁面剛載入時量到 0 尺寸，後續拉炮／金幣光等粒子效果整個看不到
   _primeAudioForMobileAutoplay(); // iOS Safari 等行動瀏覽器會擋「setTimeout／await 之後才第一次 play() 的音檔」，這裡在真正的使用者手勢當下先靜音解鎖一次
   _hasEnteredRestaurant = true;
   updateBackgroundAudio(true); // 首次強制套用，確保背景音第一次 play() 發生在這次使用者互動流程內
