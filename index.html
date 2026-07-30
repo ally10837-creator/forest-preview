@@ -187,7 +187,7 @@ body {
 }
 .birthday-box {
   background:var(--cream); border:3px solid var(--cocoa); border-radius:20px;
-  padding:24px 20px; max-width:320px; width:100%; max-height:90vh; overflow-y:auto;
+  padding:24px 20px; max-width:340px; width:100%; max-height:90vh; overflow-y:auto;
   box-shadow:5px 5px 0 var(--cocoa); text-align:center;
 }
 .birthday-envelope {
@@ -195,8 +195,23 @@ body {
   animation: birthdayEnvelopeBob 1.2s ease-in-out infinite;
 }
 .birthday-envelope.no-anim { animation:none; }
+/* 開信封後的動態影片背景（拉炮紙花＋生日卡場景），文字疊在底部的實色面板上，
+   不管影片畫面多熱鬧，文字都維持可讀。影片本身沒有透明背景，用不透明畫面呈現，
+   不是疊加在其他內容「之上」的特效層。 */
+.birthday-video-wrap {
+  display:none; position:relative; margin:-4px -4px 12px; border-radius:16px; overflow:hidden;
+  border:3px solid var(--cocoa);
+}
+.birthday-video-wrap.show { display:block; }
+.birthday-video, .birthday-video-poster {
+  display:block; width:100%; height:auto;
+}
 .birthday-content { display:none; }
-.birthday-content.open { display:block; animation: birthdayCardOpen 0.45s ease-out; }
+.birthday-content.open {
+  display:block; animation: birthdayCardOpen 0.45s ease-out;
+  position:relative; margin-top:-8px; background:var(--cream);
+  border-top:3px solid var(--cocoa); border-radius:0 0 13px 13px; padding:12px 10px 4px;
+}
 @keyframes birthdayEnvelopeBob {
   0%,100% { transform:translateY(0) rotate(-2deg); }
   50%     { transform:translateY(-6px) rotate(2deg); }
@@ -3169,6 +3184,11 @@ function openBirthdayCard(childId) {
     modal.innerHTML = `
       <div class="birthday-box">
         <div class="birthday-envelope${reduceMotion ? ' no-anim' : ''}" id="birthday-envelope" onclick="_openBirthdayEnvelope('${childId}')">🎁</div>
+        <div class="birthday-video-wrap" id="birthday-video-wrap">
+          ${reduceMotion
+            ? `<img class="birthday-video-poster" src="video/birthday_card_open_poster.jpg" alt="">`
+            : `<video class="birthday-video" id="birthday-video" muted playsinline preload="none" poster="video/birthday_card_open_poster.jpg"><source src="video/birthday_card_open.mp4" type="video/mp4"></video>`}
+        </div>
         <div class="birthday-content" id="birthday-content">
           <div style="font-size:36px;margin-bottom:6px;">🎉🎈✨</div>
           <div style="font-size:19px;font-weight:800;margin-bottom:6px;">${rb(m.name + ' 生日快樂！')}</div>
@@ -3183,27 +3203,28 @@ function openBirthdayCard(childId) {
       </div>`;
     document.body.appendChild(modal);
 
-    // reduce-motion：直接顯示展開後的卡片內容，不用再點信封
+    // reduce-motion：直接顯示展開後的卡片內容，不用再點信封，影片也直接以靜態海報圖呈現
     if (reduceMotion) {
       document.getElementById('birthday-envelope').style.display = 'none';
       document.getElementById('birthday-content').classList.add('open');
+      document.getElementById('birthday-video-wrap').classList.add('show');
     }
   } catch(e) { /* 生日卡片異常不得影響進入餐館流程 */ }
 }
 
-// 生日拉炮紙花：沿用既有 burst() 粒子系統，改用多色（品牌色系）取代單色金幣光，做出紙花感。
-function _burstBirthdayConfetti() {
-  const colors = ['#ffb830', '#ff7f7f', '#52c49a', '#5bb8ff', '#e09600'];
-  colors.forEach(c => burst(16, c));
-}
 function _openBirthdayEnvelope(childId) {
   const envelope = document.getElementById('birthday-envelope');
   const content = document.getElementById('birthday-content');
+  const videoWrap = document.getElementById('birthday-video-wrap');
   if (!envelope || !content) return;
   envelope.style.display = 'none';
   content.classList.add('open');
-  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (!reduceMotion) _burstBirthdayConfetti(); // 多色拉炮紙花，尊重減少動畫偏好時不放
+  if (videoWrap) {
+    videoWrap.classList.add('show');
+    const video = document.getElementById('birthday-video');
+    // video 是 reduceMotion 情況下不存在的（改用靜態海報圖），play() 前先確認元素真的存在
+    if (video) { try { video.play().catch(() => {}); } catch(e) {} }
+  }
 }
 
 function closeBirthdayCard(childId) {
