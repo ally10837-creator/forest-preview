@@ -200,34 +200,30 @@ body {
   padding:24px 20px; box-shadow:5px 5px 0 var(--cocoa);
 }
 /* 信封改用真正的 <button>，支援鍵盤 Enter／Space 觸發與 focus-visible 焦點樣式，
-   不是只能滑鼠點擊的 div；圖形本身用 SVG 畫信封形狀，去背、不描邊框，改用柔和陰影
-   （drop-shadow）做出立體感，不是硬邊框的方塊拼貼。*/
+   不是只能滑鼠點擊的 div；圖形本身改用請 Gemini 生成、去背處理過的插畫 PNG
+   （img/birthday_envelope.png），風格跟網站現有菜單食物插畫一致（柔和陰影、可愛表情），
+   不是程式碼畫的幾何圖形。*/
 .birthday-envelope-btn {
   cursor:pointer; user-select:none; background:none; border:none; padding:4px;
   font-family:inherit; display:inline-block; width:100%;
   animation: birthdayEnvelopeBob 1.2s ease-in-out infinite;
 }
-.envelope-svg { width: min(60vw, 420px); max-width:100%; height:auto; display:block; margin:0 auto; }
+.envelope-img { width: min(60vw, 420px); max-width:100%; height:auto; display:block; margin:0 auto; }
 .birthday-envelope-btn:focus-visible {
   outline:3px solid var(--sky); outline-offset:4px; border-radius:14px;
 }
 .birthday-envelope-btn.no-anim { animation:none; }
 .birthday-envelope-btn:disabled { cursor:default; }
-/* 點下去之後：信封蓋子先「掀開」（縮扁＋往上淡出），信封本體跟著往下淡出縮小，
-   看起來像信封真的被打開、卡片才從裡面冒出來，不是圖示瞬間被整個換掉。
-   時間拉長一點（flap 0.7s、body 0.6s，總長跟 JS 的 ENVELOPE_OPEN_ANIM_MS 對齊），
-   避免整段互動感覺太趕。 */
-.envelope-flap {
-  transform-origin: 80px 22px;
-  transition: transform 0.7s cubic-bezier(0.34,1.56,0.64,1), opacity 0.5s ease 0.25s;
+/* 點下去之後：信封整體放大＋淡出，像是「打開後被放到一邊」，卡片才接著展開，不是圖示
+   瞬間被整個換掉。時間拉長一點（0.7s，總長跟 JS 的 ENVELOPE_OPEN_ANIM_MS 對齊），
+   避免整段互動感覺太趕。改用單張圖片後不再有信封蓋／信封本體分開兩層可以個別動畫，
+   整張圖一起做這個效果。 */
+.envelope-img {
+  transition: transform 0.7s cubic-bezier(0.34,1.56,0.64,1), opacity 0.6s ease;
 }
-.envelope-body {
-  transition: transform 0.6s ease 0.35s, opacity 0.6s ease 0.35s;
-}
-.birthday-envelope-btn.opening .envelope-flap { transform: scaleY(0.05) translateY(-6px); opacity: 0; }
-.birthday-envelope-btn.opening .envelope-body { transform: translateY(12px) scale(0.85); opacity: 0; }
+.birthday-envelope-btn.opening .envelope-img { transform: scale(1.15) translateY(-10px); opacity: 0; }
 @media (prefers-reduced-motion: reduce) {
-  .envelope-flap, .envelope-body { transition: none; }
+  .envelope-img { transition: none; }
 }
 .birthday-content { display:none; }
 .birthday-content.open { display:block; animation: birthdayCardOpen 0.6s ease-out; }
@@ -3208,12 +3204,7 @@ function openBirthdayCard(childId) {
     modal.innerHTML = `
       <div class="birthday-box" role="dialog" aria-modal="true" aria-label="${m.name} 的生日卡片">
         <button type="button" class="birthday-envelope-btn${reduceMotion ? ' no-anim' : ''}" id="birthday-envelope" aria-label="打開生日禮物信封" onclick="_openBirthdayEnvelope('${childId}')">
-          <svg class="envelope-svg" viewBox="0 0 160 110" style="overflow:visible;">
-            <rect class="envelope-body" x="5" y="20" width="150" height="85" rx="16" fill="var(--mango)" style="filter:drop-shadow(3px 5px 0 rgba(61,43,31,0.3));"/>
-            <polygon class="envelope-flap" points="5,20 80,66 155,20" fill="var(--mango-dark)"/>
-            <circle class="envelope-body" cx="80" cy="66" r="16" fill="var(--rose)" style="filter:drop-shadow(1px 2px 0 rgba(61,43,31,0.25));"/>
-            <text class="envelope-body" x="80" y="72" font-size="17" text-anchor="middle">💌</text>
-          </svg>
+          <img class="envelope-img" src="img/birthday_envelope.png" alt="">
         </button>
         <div class="birthday-content" id="birthday-content">
           <div style="font-size:36px;margin-bottom:6px;">🎉🎈✨</div>
