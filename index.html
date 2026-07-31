@@ -3209,9 +3209,19 @@ function openBirthdayCard(childId) {
 // 生日拉炮紙花：沿用既有 burst() 粒子系統，改用多色（品牌色系）取代單色金幣光，做出紙花感。
 // 不引入 canvas-confetti 等外部函式庫——這個效果只需要固定幾種品牌色的圓點粒子，
 // 現有 burst() 已經足夠，維持網站零外部依賴的架構，也不用多背一個函式庫的程式體積。
+// 生日卡片彈窗是 position:fixed（固定貼在目前視窗中央，不會跟著頁面捲動），但 burst()
+// 原本的 cx/cy 是用 #app-wrap 的內容總高度（跟著頁面一起捲動的容器，可能長達幾千 px，
+// 是目前分頁全部內容捲動起來的總高度，不是螢幕可視範圍）去算的——兩者座標系統對不上，
+// 紙花很可能誕生在使用者目前捲動位置以外、完全看不到的地方（實測 iPad 回饋：particles
+// 確實有生成、animate() 迴圈確實有在跑，畫面卻完全看不到紙花，正是這個座標錯位造成的）。
+// 生日紙花改用目前可視視窗（配合目前捲動位置）算座標，不用 #app-wrap 的內容總高度。
 function _burstBirthdayConfetti() {
   const colors = ['#ffb830', '#ff7f7f', '#52c49a', '#5bb8ff', '#e09600'];
-  colors.forEach(c => burst(16, c));
+  const cx = (window.scrollX || 0) + window.innerWidth / 2;
+  const cy = (window.scrollY || 0) + window.innerHeight / 3;
+  colors.forEach(color => {
+    for (let i = 0; i < 16; i++) particles.push(new Particle(cx, cy, color));
+  });
 }
 
 function _openBirthdayEnvelope(childId) {
