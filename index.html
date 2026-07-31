@@ -191,10 +191,11 @@ body {
   box-shadow:5px 5px 0 var(--cocoa); text-align:center;
 }
 /* 信封改用真正的 <button>，支援鍵盤 Enter／Space 觸發與 focus-visible 焦點樣式，
-   不是只能滑鼠點擊的 div。*/
+   不是只能滑鼠點擊的 div；圖形本身用 SVG 畫真正的信封形狀（矩形信封本體＋三角形
+   信封蓋，都有跟網站一致的粗咖啡色邊框），不是拿禮物盒 emoji 充當信封。*/
 .birthday-envelope-btn {
-  font-size:64px; cursor:pointer; user-select:none;
-  background:none; border:none; padding:4px; font-family:inherit; display:inline-block;
+  cursor:pointer; user-select:none; background:none; border:none; padding:4px;
+  font-family:inherit; display:inline-block;
   animation: birthdayEnvelopeBob 1.2s ease-in-out infinite;
 }
 .birthday-envelope-btn:focus-visible {
@@ -202,6 +203,20 @@ body {
 }
 .birthday-envelope-btn.no-anim { animation:none; }
 .birthday-envelope-btn:disabled { cursor:default; }
+/* 點下去之後：信封蓋子先「掀開」（縮扁＋往上淡出），信封本體跟著往下淡出縮小，
+   看起來像信封真的被打開、卡片才從裡面冒出來，不是圖示瞬間被整個換掉。 */
+.envelope-flap {
+  transform-origin: 80px 22px;
+  transition: transform 0.45s cubic-bezier(0.34,1.56,0.64,1), opacity 0.35s ease 0.15s;
+}
+.envelope-body {
+  transition: transform 0.4s ease 0.2s, opacity 0.4s ease 0.2s;
+}
+.birthday-envelope-btn.opening .envelope-flap { transform: scaleY(0.05) translateY(-6px); opacity: 0; }
+.birthday-envelope-btn.opening .envelope-body { transform: translateY(12px) scale(0.85); opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .envelope-flap, .envelope-body { transition: none; }
+}
 .birthday-content { display:none; }
 .birthday-content.open { display:block; animation: birthdayCardOpen 0.45s ease-out; }
 @keyframes birthdayEnvelopeBob {
@@ -3180,7 +3195,13 @@ function openBirthdayCard(childId) {
     modal.className = 'birthday-modal';
     modal.innerHTML = `
       <div class="birthday-box" role="dialog" aria-modal="true" aria-label="${m.name} 的生日卡片">
-        <button type="button" class="birthday-envelope-btn${reduceMotion ? ' no-anim' : ''}" id="birthday-envelope" aria-label="打開生日禮物信封" onclick="_openBirthdayEnvelope('${childId}')">🎁</button>
+        <button type="button" class="birthday-envelope-btn${reduceMotion ? ' no-anim' : ''}" id="birthday-envelope" aria-label="打開生日禮物信封" onclick="_openBirthdayEnvelope('${childId}')">
+          <svg viewBox="0 0 160 110" width="140" height="96" style="overflow:visible;display:block;">
+            <rect class="envelope-body" x="5" y="20" width="150" height="85" rx="10" fill="var(--mango)" stroke="var(--cocoa)" stroke-width="4"/>
+            <text class="envelope-body" x="80" y="88" font-size="30" text-anchor="middle">💌</text>
+            <polygon class="envelope-flap" points="5,20 80,68 155,20" fill="var(--mango-dark)" stroke="var(--cocoa)" stroke-width="4" stroke-linejoin="round"/>
+          </svg>
+        </button>
         <div class="birthday-content" id="birthday-content">
           <div style="font-size:36px;margin-bottom:6px;">🎉🎈✨</div>
           <div id="birthday-greeting-text" style="font-size:19px;font-weight:800;margin-bottom:6px;min-height:1.3em;"></div>
@@ -3255,6 +3276,11 @@ function _burstBirthdayConfetti() {
   });
 }
 
+// 信封打開的動畫分兩段：① 信封蓋子掀開＋信封本體淡出縮小（見 CSS .opening 規則，約 0.5 秒），
+// ② 動畫播完才真正隱藏信封、展開卡片內容，讓「打開信封」在視覺上是連貫的一個動作，
+// 不是圖示瞬間被整個換掉。ENVELOPE_OPEN_ANIM_MS 要跟 CSS transition 時間對齊
+// （flap 0.45s + 0.15s delay ≈ 0.6s，這裡抓 550ms 留一點餘裕，不用抓到剛好卡秒對齊）。
+const ENVELOPE_OPEN_ANIM_MS = 550;
 function _openBirthdayEnvelope(childId) {
   if (window.__birthdayDebug) window.__birthdayDebug.envelopeClicked++; // 🔧暫時除錯，測試完成後移除
   const envelope = document.getElementById('birthday-envelope');
@@ -3262,35 +3288,45 @@ function _openBirthdayEnvelope(childId) {
   // envelope.disabled：信封改用真正的 <button> 後，用內建的 disabled 狀態防止連點
   // 重複觸發，不需要另外自己記一個旗標變數。
   if (!envelope || !content || envelope.disabled) return;
-  envelope.disabled = true;
-  envelope.style.display = 'none';
-  content.classList.add('open');
+  envelope.disabled = true; // 立刻鎖住，動畫播放期間不能再被點第二次
   const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const restEl = document.getElementById('birthday-rest-content');
-  if (reduceMotion) {
-    // 正常情況下 reduceMotion 時信封已經被隱藏＋disabled，不會走到這裡；保留純粹保險，
-    // 確保就算真的被觸發，文字也是整段直接顯示，不會意外播放打字動畫。
+
+  function revealContent() {
+    envelope.style.display = 'none';
+    content.classList.add('open');
+    if (reduceMotion) {
+      // 正常情況下 reduceMotion 時信封已經被隱藏＋disabled，不會走到這裡；保留純粹保險，
+      // 確保就算真的被觸發，文字也是整段直接顯示，不會意外播放打字動畫。
+      const texts = _birthdayCardTexts || {};
+      const greetingEl = document.getElementById('birthday-greeting-text');
+      if (greetingEl) greetingEl.innerHTML = texts.greetingHtml || '';
+      const ageEl = document.getElementById('birthday-age-text');
+      if (ageEl) ageEl.innerHTML = texts.ageHtml || '';
+      if (restEl) restEl.style.opacity = '1';
+      return;
+    }
+    _burstBirthdayConfetti(); // 多色拉炮紙花
+    // 賀詞逐字打字機效果：先打姓名＋生日快樂，打完再接著打歲數，兩段都打完才淡入
+    // 金幣說明／領取按鈕，避免文字還在打、其他內容卻已經全部顯示的違和感。
     const texts = _birthdayCardTexts || {};
     const greetingEl = document.getElementById('birthday-greeting-text');
-    if (greetingEl) greetingEl.innerHTML = texts.greetingHtml || '';
     const ageEl = document.getElementById('birthday-age-text');
-    if (ageEl) ageEl.innerHTML = texts.ageHtml || '';
-    if (restEl) restEl.style.opacity = '1';
-    return;
+    const showRest = () => { if (restEl) restEl.style.opacity = '1'; };
+    const typeAge = () => {
+      if (ageEl && texts.ageHtml) _typeRevealHtml(ageEl, texts.ageHtml, 90, showRest);
+      else showRest();
+    };
+    if (greetingEl && texts.greetingHtml) _typeRevealHtml(greetingEl, texts.greetingHtml, 90, typeAge);
+    else typeAge();
   }
-  _burstBirthdayConfetti(); // 多色拉炮紙花
-  // 賀詞逐字打字機效果：先打姓名＋生日快樂，打完再接著打歲數，兩段都打完才淡入
-  // 金幣說明／領取按鈕，避免文字還在打、其他內容卻已經全部顯示的違和感。
-  const texts = _birthdayCardTexts || {};
-  const greetingEl = document.getElementById('birthday-greeting-text');
-  const ageEl = document.getElementById('birthday-age-text');
-  const showRest = () => { if (restEl) restEl.style.opacity = '1'; };
-  const typeAge = () => {
-    if (ageEl && texts.ageHtml) _typeRevealHtml(ageEl, texts.ageHtml, 90, showRest);
-    else showRest();
-  };
-  if (greetingEl && texts.greetingHtml) _typeRevealHtml(greetingEl, texts.greetingHtml, 90, typeAge);
-  else typeAge();
+
+  if (reduceMotion) {
+    revealContent(); // 不播放信封掀開動畫，直接展開
+  } else {
+    envelope.classList.add('opening');
+    setTimeout(revealContent, ENVELOPE_OPEN_ANIM_MS);
+  }
 }
 
 let _birthdayModalChildId = null;
