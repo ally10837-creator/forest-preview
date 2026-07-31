@@ -181,18 +181,22 @@ body {
 @keyframes birthdayFabBob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
 
 /* ── BIRTHDAY CARD MODAL ── */
+/* 對齊改成靠頂（原本是垂直置中），內容展開變高後，領取按鈕才不會被往下擠出可視範圍外
+   需要額外捲動才看得到——寧可讓卡片蓋住下面的菜單內容，也要讓按鈕停留在畫面上半部，
+   容易點到。overflow-y:auto 是保險，萬一內容真的還是比一屏高，遮罩本身也能捲動。 */
 .birthday-modal {
   position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:900;
-  display:flex; align-items:center; justify-content:center; padding:20px;
+  display:flex; align-items:flex-start; justify-content:center;
+  padding:32px 20px 20px; overflow-y:auto;
 }
-/* 信封（關閉狀態）跟卡片（展開狀態）共用同一套寬度邏輯（約螢幕寬度 6 成，設上限避免
+/* 信封（關閉狀態）跟卡片（展開狀態）共用同一套寬度邏輯（約螢幕寬度 7 成，設上限避免
    在大螢幕上過度誇張），這樣「信封展開變成卡片」視覺上是同一個物件在變化，
    不是一個小圖示突然跳成一個不成比例的大方塊。
    關閉狀態故意不給背景／邊框——讓信封本身直接浮在遮罩上、去背無框；
    展開後才由 .card-opened 補上卡片感的米白底／咖啡邊框／陰影。 */
 .birthday-box {
-  --bday-w: min(60vw, 420px);
-  width:var(--bday-w); max-width:94vw; max-height:90vh; overflow-y:auto;
+  --bday-w: min(72vw, 480px);
+  width:var(--bday-w); max-width:94vw;
   text-align:center; padding:8px 0;
 }
 .birthday-box.card-opened {
@@ -208,7 +212,7 @@ body {
   font-family:inherit; display:inline-block; width:100%;
   animation: birthdayEnvelopeBob 1.2s ease-in-out infinite;
 }
-.envelope-img { width: min(60vw, 420px); max-width:100%; height:auto; display:block; margin:0 auto; }
+.envelope-img { width: min(72vw, 480px); max-width:100%; height:auto; display:block; margin:0 auto; }
 .birthday-envelope-btn:focus-visible {
   outline:3px solid var(--sky); outline-offset:4px; border-radius:14px;
 }
@@ -3322,10 +3326,10 @@ function _openBirthdayEnvelope(childId) {
     const ageEl = document.getElementById('birthday-age-text');
     const showRest = () => { if (restEl) restEl.style.opacity = '1'; };
     const typeAge = () => {
-      if (ageEl && texts.ageHtml) _typeRevealHtml(ageEl, texts.ageHtml, 140, showRest);
+      if (ageEl && texts.ageHtml) _typeRevealHtml(ageEl, texts.ageHtml, 200, showRest);
       else showRest();
     };
-    if (greetingEl && texts.greetingHtml) _typeRevealHtml(greetingEl, texts.greetingHtml, 140, typeAge);
+    if (greetingEl && texts.greetingHtml) _typeRevealHtml(greetingEl, texts.greetingHtml, 200, typeAge);
     else typeAge();
   }
 
