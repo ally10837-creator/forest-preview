@@ -3215,6 +3215,7 @@ function _burstBirthdayConfetti() {
 }
 
 function _openBirthdayEnvelope(childId) {
+  if (window.__birthdayDebug) window.__birthdayDebug.envelopeClicked++; // 🔧暫時除錯，測試完成後移除
   const envelope = document.getElementById('birthday-envelope');
   const content = document.getElementById('birthday-content');
   // envelope.disabled：信封改用真正的 <button> 後，用內建的 disabled 狀態防止連點
@@ -4036,11 +4037,13 @@ function burst(count, color) {
   const wrap = document.getElementById('app-wrap');
   const cx = wrap ? wrap.offsetWidth/2  : innerWidth/2;
   const cy = wrap ? wrap.offsetHeight/3 : innerHeight/3;
+  if (window.__birthdayDebug) window.__birthdayDebug.burstCalled++; // 🔧暫時除錯，測試完成後移除
   for(let i=0;i<count;i++) particles.push(new Particle(cx,cy,color));
 }
 (function animate() {
   ctx.clearRect(0,0,canvas.width,canvas.height);
   particles=particles.filter(p=>{p.update();p.draw();return p.life>0;});
+  if (window.__birthdayDebug) window.__birthdayDebug.animateFrames++; // 🔧暫時除錯，測試完成後移除
   requestAnimationFrame(animate);
 })();
 
@@ -4894,4 +4897,32 @@ setInterval(async () => {
 
 
 
+<script>
+// 🔧🔧🔧 暫時除錯面板，測試完成後整段移除 🔧🔧🔧
+// 用來確認生日信封點擊／紙花觸發／canvas 動畫在實際裝置上是否真的有發生，
+// 不依賴開發者主控台（iPad 沒有主控台可用）。
+(function () {
+  window.__birthdayDebug = { envelopeClicked: 0, burstCalled: 0, animateFrames: 0 };
+  const panel = document.createElement('div');
+  panel.id = 'birthday-debug-panel';
+  panel.style.cssText = 'position:fixed;top:6px;left:6px;z-index:99999;background:rgba(0,0,0,0.88);color:#7CFC7C;font-family:monospace;font-size:12px;line-height:1.5;padding:8px 10px;border-radius:8px;white-space:pre;pointer-events:none;max-width:92vw;';
+  panel.textContent = '🔧除錯面板載入中…';
+  document.body.appendChild(panel);
+  function updatePanel() {
+    const canvas = document.getElementById('fx-canvas');
+    const wrap = document.getElementById('app-wrap');
+    panel.textContent =
+      '🔧生日卡片除錯\n' +
+      'visibilityState: ' + document.visibilityState + '\n' +
+      'app-wrap尺寸: ' + (wrap ? wrap.offsetWidth + 'x' + wrap.offsetHeight : 'n/a') + '\n' +
+      'canvas尺寸: ' + (canvas ? canvas.width + 'x' + canvas.height : 'n/a') + '\n' +
+      'particles數量: ' + (typeof particles !== 'undefined' ? particles.length : 'n/a') + '\n' +
+      '信封點擊次數: ' + window.__birthdayDebug.envelopeClicked + '\n' +
+      'burst()呼叫次數: ' + window.__birthdayDebug.burstCalled + '\n' +
+      'animate幀數: ' + window.__birthdayDebug.animateFrames;
+  }
+  setInterval(updatePanel, 300);
+  updatePanel();
+})();
+</script>
 </body></html>
