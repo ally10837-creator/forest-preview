@@ -187,33 +187,23 @@ body {
 }
 .birthday-box {
   background:var(--cream); border:3px solid var(--cocoa); border-radius:20px;
-  padding:16px; max-width:520px; width:92vw; max-height:92vh; overflow:hidden;
+  padding:24px 20px; max-width:380px; width:100%; max-height:90vh; overflow-y:auto;
   box-shadow:5px 5px 0 var(--cocoa); text-align:center;
 }
-.birthday-envelope {
+/* 信封改用真正的 <button>，支援鍵盤 Enter／Space 觸發與 focus-visible 焦點樣式，
+   不是只能滑鼠點擊的 div。*/
+.birthday-envelope-btn {
   font-size:64px; cursor:pointer; user-select:none;
+  background:none; border:none; padding:4px; font-family:inherit; display:inline-block;
   animation: birthdayEnvelopeBob 1.2s ease-in-out infinite;
 }
-.birthday-envelope.no-anim { animation:none; }
-/* 開信封後改顯示這個大範圍的開卡影片（拉炮紙花＋生日卡場景），佔卡片主要面積（約
-   viewport 7 成高），文字疊在影片底部的實色面板上、不管影片畫面多熱鬧都維持可讀，
-   面板用 position:absolute 疊在影片內、不額外撐高卡片，領取按鈕不需要往下捲動就看得到。
-   影片本身沒有透明背景，用不透明畫面呈現，不是疊加在其他內容「之上」的特效層。 */
-.birthday-video-wrap {
-  display:none; position:relative; border-radius:16px; overflow:hidden;
-  border:3px solid var(--cocoa);
+.birthday-envelope-btn:focus-visible {
+  outline:3px solid var(--sky); outline-offset:4px; border-radius:14px;
 }
-.birthday-video-wrap.show { display:block; height:min(78vh, 720px); }
-.birthday-video, .birthday-video-poster {
-  display:block; width:100%; height:100%; object-fit:cover;
-}
+.birthday-envelope-btn.no-anim { animation:none; }
+.birthday-envelope-btn:disabled { cursor:default; }
 .birthday-content { display:none; }
-.birthday-content.open {
-  display:block; animation: birthdayCardOpen 0.45s ease-out;
-  position:absolute; left:0; right:0; bottom:0;
-  background:rgba(255,253,246,0.97); border-top:3px solid var(--cocoa);
-  padding:12px 12px 8px; max-height:62%; overflow-y:auto;
-}
+.birthday-content.open { display:block; animation: birthdayCardOpen 0.45s ease-out; }
 @keyframes birthdayEnvelopeBob {
   0%,100% { transform:translateY(0) rotate(-2deg); }
   50%     { transform:translateY(-6px) rotate(2deg); }
@@ -229,7 +219,7 @@ body {
 }
 .birthday-claim-btn:disabled { opacity:0.6; cursor:default; }
 @media (prefers-reduced-motion: reduce) {
-  .birthday-envelope { animation:none; }
+  .birthday-envelope-btn { animation:none; }
   .birthday-content.open { animation:none; }
   .birthday-fab { animation:none; }
 }
@@ -3184,52 +3174,68 @@ function openBirthdayCard(childId) {
     modal.id = 'birthday-modal';
     modal.className = 'birthday-modal';
     modal.innerHTML = `
-      <div class="birthday-box">
-        <div class="birthday-envelope${reduceMotion ? ' no-anim' : ''}" id="birthday-envelope" onclick="_openBirthdayEnvelope('${childId}')">🎁</div>
-        <div class="birthday-video-wrap" id="birthday-video-wrap">
-          ${reduceMotion
-            ? `<img class="birthday-video-poster" src="video/birthday_card_open_poster.jpg" alt="">`
-            : `<video class="birthday-video" id="birthday-video" muted playsinline preload="none" poster="video/birthday_card_open_poster.jpg"><source src="video/birthday_card_open.mp4" type="video/mp4"></video>`}
-          <div class="birthday-content" id="birthday-content">
-            <div style="font-size:17px;font-weight:800;margin-bottom:4px;">🎉 ${rb(m.name + ' 生日快樂！')} 🎈</div>
-            ${ageLine}
-            <div style="background:#fff4e0;border:2px solid var(--mango);border-radius:12px;padding:8px;font-size:13px;font-weight:700;margin:6px 0;">
-              🎁 ${rb('森林餐館送你')} <span style="color:var(--mango-dark);">200</span> ${rb('枚生日金幣')}
-            </div>
-            <div id="birthday-status-msg" style="font-size:12px;font-weight:700;margin-bottom:6px;"></div>
-            <div id="birthday-claim-area">${claimArea}</div>
+      <div class="birthday-box" role="dialog" aria-modal="true" aria-label="${m.name} 的生日卡片">
+        <button type="button" class="birthday-envelope-btn${reduceMotion ? ' no-anim' : ''}" id="birthday-envelope" aria-label="打開生日禮物信封" onclick="_openBirthdayEnvelope('${childId}')">🎁</button>
+        <div class="birthday-content" id="birthday-content">
+          <div style="font-size:36px;margin-bottom:6px;">🎉🎈✨</div>
+          <div style="font-size:19px;font-weight:800;margin-bottom:6px;">${rb(m.name + ' 生日快樂！')}</div>
+          ${ageLine}
+          <div style="background:#fff4e0;border:2px solid var(--mango);border-radius:12px;padding:10px;font-size:14px;font-weight:700;margin:10px 0;">
+            🎁 ${rb('森林餐館送你')} <span style="color:var(--mango-dark);">200</span> ${rb('枚生日金幣')}
           </div>
+          <div id="birthday-status-msg" style="font-size:13px;font-weight:700;margin-bottom:8px;"></div>
+          <div id="birthday-claim-area">${claimArea}</div>
         </div>
-        <button style="margin-top:10px;background:none;border:none;color:var(--cocoa-soft);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;text-decoration:underline;" onclick="closeBirthdayCard('${childId}')">${rb('晚點再看')}</button>
+        <button type="button" style="margin-top:10px;background:none;border:none;color:var(--cocoa-soft);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;text-decoration:underline;" onclick="closeBirthdayCard('${childId}')">${rb('晚點再看')}</button>
       </div>`;
     document.body.appendChild(modal);
 
-    // reduce-motion：直接顯示展開後的卡片內容，不用再點信封，影片也直接以靜態海報圖呈現
+    // ESC 關閉：記住目前是哪個孩子的卡片（給 ESC handler 用，行為要跟按「晚點再看」一致，
+    // 也要標記今天已關閉），並在開啟時把焦點移到信封按鈕，方便鍵盤操作。
+    _birthdayModalChildId = childId;
+    document.addEventListener('keydown', _birthdayModalEscHandler);
+    const envelopeBtn = document.getElementById('birthday-envelope');
+
+    // reduce-motion：直接顯示展開後的卡片內容，不用再點信封
     if (reduceMotion) {
-      document.getElementById('birthday-envelope').style.display = 'none';
+      if (envelopeBtn) { envelopeBtn.style.display = 'none'; envelopeBtn.disabled = true; }
       document.getElementById('birthday-content').classList.add('open');
-      document.getElementById('birthday-video-wrap').classList.add('show');
+    } else if (envelopeBtn) {
+      envelopeBtn.focus();
     }
   } catch(e) { /* 生日卡片異常不得影響進入餐館流程 */ }
+}
+
+// 生日拉炮紙花：沿用既有 burst() 粒子系統，改用多色（品牌色系）取代單色金幣光，做出紙花感。
+// 不引入 canvas-confetti 等外部函式庫——這個效果只需要固定幾種品牌色的圓點粒子，
+// 現有 burst() 已經足夠，維持網站零外部依賴的架構，也不用多背一個函式庫的程式體積。
+function _burstBirthdayConfetti() {
+  const colors = ['#ffb830', '#ff7f7f', '#52c49a', '#5bb8ff', '#e09600'];
+  colors.forEach(c => burst(16, c));
 }
 
 function _openBirthdayEnvelope(childId) {
   const envelope = document.getElementById('birthday-envelope');
   const content = document.getElementById('birthday-content');
-  const videoWrap = document.getElementById('birthday-video-wrap');
-  if (!envelope || !content) return;
+  // envelope.disabled：信封改用真正的 <button> 後，用內建的 disabled 狀態防止連點
+  // 重複觸發，不需要另外自己記一個旗標變數。
+  if (!envelope || !content || envelope.disabled) return;
+  envelope.disabled = true;
   envelope.style.display = 'none';
   content.classList.add('open');
-  if (videoWrap) {
-    videoWrap.classList.add('show');
-    const video = document.getElementById('birthday-video');
-    // video 是 reduceMotion 情況下不存在的（改用靜態海報圖），play() 前先確認元素真的存在
-    if (video) { try { video.play().catch(() => {}); } catch(e) {} }
-  }
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!reduceMotion) _burstBirthdayConfetti(); // 多色拉炮紙花，尊重減少動畫偏好時不放
+}
+
+let _birthdayModalChildId = null;
+function _birthdayModalEscHandler(e) {
+  if (e.key === 'Escape') closeBirthdayCard(_birthdayModalChildId);
 }
 
 function closeBirthdayCard(childId) {
   if (childId) _markBirthdayCardDismissedToday(childId);
+  document.removeEventListener('keydown', _birthdayModalEscHandler); // 避免每次開卡片疊加監聽器
+  _birthdayModalChildId = null;
   const modal = document.getElementById('birthday-modal');
   if (modal) modal.remove();
 }
