@@ -196,10 +196,14 @@ body {
    展開後才由 .card-opened 補上卡片感的米白底／咖啡邊框／陰影。 */
 .birthday-box {
   --bday-w: min(72vw, 480px);
-  width:var(--bday-w); max-width:94vw;
+  max-width:94vw;
   text-align:center; padding:8px 0;
 }
+/* 關閉狀態（只顯示信封）故意不設 width，讓信封圖片自己決定寬度（見 .envelope-img），
+   不會被卡片的寬度上限（--bday-w）夾住而顯得比展開後的卡片還小。
+   .card-opened 才把寬度鎖到 --bday-w，這時候才是真正的卡片版面。 */
 .birthday-box.card-opened {
+  width:var(--bday-w);
   background:var(--cream); border:3px solid var(--cocoa); border-radius:20px;
   padding:24px 20px; box-shadow:5px 5px 0 var(--cocoa);
 }
@@ -212,7 +216,10 @@ body {
   font-family:inherit; display:inline-block; width:100%;
   animation: birthdayEnvelopeBob 1.2s ease-in-out infinite;
 }
-.envelope-img { width: min(72vw, 480px); max-width:100%; height:auto; display:block; margin:0 auto; }
+/* 信封圖片本身是扁寬的長方形（900x490，比例約1.84:1），就算跟卡片用同一個寬度數字，
+   因為比例關係換算出來的高度還是矮很多，視覺上會比展開後的卡片顯得小、不對稱。
+   這裡刻意給信封比卡片更大的寬度上限，讓關閉狀態的信封本身也有足夠的存在感。 */
+.envelope-img { width: min(88vw, 620px); max-width:100%; height:auto; display:block; margin:0 auto; }
 .birthday-envelope-btn:focus-visible {
   outline:3px solid var(--sky); outline-offset:4px; border-radius:14px;
 }
@@ -3215,11 +3222,11 @@ function openBirthdayCard(childId) {
           <div id="birthday-greeting-text" style="font-size:19px;font-weight:800;margin-bottom:6px;min-height:1.3em;"></div>
           <div id="birthday-age-text" style="font-size:15px;font-weight:800;color:var(--mango-dark);margin-bottom:6px;min-height:${age != null ? '1.3em' : '0'};"></div>
           <div id="birthday-rest-content" style="opacity:0;transition:opacity 0.4s ease;">
-            <div style="background:#fff4e0;border:2px solid var(--mango);border-radius:12px;padding:10px;font-size:14px;font-weight:700;margin:10px 0;">
+            <div id="birthday-claim-area">${claimArea}</div>
+            <div id="birthday-status-msg" style="font-size:13px;font-weight:700;margin:8px 0;"></div>
+            <div style="background:#fff4e0;border:2px solid var(--mango);border-radius:12px;padding:10px;font-size:14px;font-weight:700;margin-top:10px;">
               🎁 ${rb('森林餐館送你')} <span style="color:var(--mango-dark);">200</span> ${rb('枚生日金幣')}
             </div>
-            <div id="birthday-status-msg" style="font-size:13px;font-weight:700;margin-bottom:8px;"></div>
-            <div id="birthday-claim-area">${claimArea}</div>
           </div>
         </div>
         <button type="button" style="margin-top:10px;background:none;border:none;color:var(--cocoa-soft);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;text-decoration:underline;" onclick="closeBirthdayCard('${childId}')">${rb('晚點再看')}</button>
