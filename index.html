@@ -187,7 +187,7 @@ body {
 }
 .birthday-box {
   background:var(--cream); border:3px solid var(--cocoa); border-radius:20px;
-  padding:24px 20px; max-width:340px; width:100%; max-height:90vh; overflow-y:auto;
+  padding:16px; max-width:520px; width:92vw; max-height:92vh; overflow:hidden;
   box-shadow:5px 5px 0 var(--cocoa); text-align:center;
 }
 .birthday-envelope {
@@ -195,22 +195,24 @@ body {
   animation: birthdayEnvelopeBob 1.2s ease-in-out infinite;
 }
 .birthday-envelope.no-anim { animation:none; }
-/* 開信封後的動態影片背景（拉炮紙花＋生日卡場景），文字疊在底部的實色面板上，
-   不管影片畫面多熱鬧，文字都維持可讀。影片本身沒有透明背景，用不透明畫面呈現，
-   不是疊加在其他內容「之上」的特效層。 */
+/* 開信封後改顯示這個大範圍的開卡影片（拉炮紙花＋生日卡場景），佔卡片主要面積（約
+   viewport 7 成高），文字疊在影片底部的實色面板上、不管影片畫面多熱鬧都維持可讀，
+   面板用 position:absolute 疊在影片內、不額外撐高卡片，領取按鈕不需要往下捲動就看得到。
+   影片本身沒有透明背景，用不透明畫面呈現，不是疊加在其他內容「之上」的特效層。 */
 .birthday-video-wrap {
-  display:none; position:relative; margin:-4px -4px 12px; border-radius:16px; overflow:hidden;
+  display:none; position:relative; border-radius:16px; overflow:hidden;
   border:3px solid var(--cocoa);
 }
-.birthday-video-wrap.show { display:block; }
+.birthday-video-wrap.show { display:block; height:min(78vh, 720px); }
 .birthday-video, .birthday-video-poster {
-  display:block; width:100%; height:auto;
+  display:block; width:100%; height:100%; object-fit:cover;
 }
 .birthday-content { display:none; }
 .birthday-content.open {
   display:block; animation: birthdayCardOpen 0.45s ease-out;
-  position:relative; margin-top:-8px; background:var(--cream);
-  border-top:3px solid var(--cocoa); border-radius:0 0 13px 13px; padding:12px 10px 4px;
+  position:absolute; left:0; right:0; bottom:0;
+  background:rgba(255,253,246,0.97); border-top:3px solid var(--cocoa);
+  padding:12px 12px 8px; max-height:62%; overflow-y:auto;
 }
 @keyframes birthdayEnvelopeBob {
   0%,100% { transform:translateY(0) rotate(-2deg); }
@@ -3188,16 +3190,15 @@ function openBirthdayCard(childId) {
           ${reduceMotion
             ? `<img class="birthday-video-poster" src="video/birthday_card_open_poster.jpg" alt="">`
             : `<video class="birthday-video" id="birthday-video" muted playsinline preload="none" poster="video/birthday_card_open_poster.jpg"><source src="video/birthday_card_open.mp4" type="video/mp4"></video>`}
-        </div>
-        <div class="birthday-content" id="birthday-content">
-          <div style="font-size:36px;margin-bottom:6px;">🎉🎈✨</div>
-          <div style="font-size:19px;font-weight:800;margin-bottom:6px;">${rb(m.name + ' 生日快樂！')}</div>
-          ${ageLine}
-          <div style="background:#fff4e0;border:2px solid var(--mango);border-radius:12px;padding:10px;font-size:14px;font-weight:700;margin:10px 0;">
-            🎁 ${rb('森林餐館送你')} <span style="color:var(--mango-dark);">200</span> ${rb('枚生日金幣')}
+          <div class="birthday-content" id="birthday-content">
+            <div style="font-size:17px;font-weight:800;margin-bottom:4px;">🎉 ${rb(m.name + ' 生日快樂！')} 🎈</div>
+            ${ageLine}
+            <div style="background:#fff4e0;border:2px solid var(--mango);border-radius:12px;padding:8px;font-size:13px;font-weight:700;margin:6px 0;">
+              🎁 ${rb('森林餐館送你')} <span style="color:var(--mango-dark);">200</span> ${rb('枚生日金幣')}
+            </div>
+            <div id="birthday-status-msg" style="font-size:12px;font-weight:700;margin-bottom:6px;"></div>
+            <div id="birthday-claim-area">${claimArea}</div>
           </div>
-          <div id="birthday-status-msg" style="font-size:13px;font-weight:700;margin-bottom:8px;"></div>
-          <div id="birthday-claim-area">${claimArea}</div>
         </div>
         <button style="margin-top:10px;background:none;border:none;color:var(--cocoa-soft);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;text-decoration:underline;" onclick="closeBirthdayCard('${childId}')">${rb('晚點再看')}</button>
       </div>`;
@@ -4469,7 +4470,7 @@ function playPandaViolationSequence(eventKey) {
 // 刷新（週結算語音、孩子端違規頁）都不算，第一次在這些情境播放很容易被安靜擋下。
 // 這裡在真正的使用者手勢（進入餐館點擊）當下，把所有音檔都靜音播放＋立刻暫停一次，
 // 讓瀏覽器把這些 <audio> 元素標記為已解鎖，之後不論從哪個情境播放都不會再被擋。
-function _primeAudioForMobileAutoplay() {
+function _primeAudioForMobileAutoplay(voiceKeysToPrime) {
   const prime = (key, def, pool) => {
     try {
       let audio = pool[key];
@@ -4545,9 +4546,18 @@ function _primeAudioForMobileAutoplay() {
       ? playResult.then(onSuccess, onFail)
       : Promise.resolve().then(onSuccess);
   };
-  // prime:false 的語音不納入預播——保留給未來偶發、非每次進入都會播、音檔可能還不存在的語音使用。
-  Object.keys(VOICE_ASSETS).filter(key => VOICE_ASSETS[key].prime !== false)
-    .forEach(key => primeVoice(key, VOICE_ASSETS[key]));
+  // 只預播「這次 enterRestaurant() 真的會緊接著播放」的那一支語音，不是全部語音資產——
+  // 實測在 iPad Safari 上重現：一次對 9 支不同角色的 <audio> 元素同時呼叫 play() 預播，
+  // 就算每一支都設了 volume:0＋muted:true，仍有機率讓其中幾支被聽到完整台詞內容，研判是
+  // 同時間過多 <audio> play() 導致行動瀏覽器播放行為異常，不是單一元素的靜音沒生效。
+  // 減少同時 priming 的數量到最小必要範圍以降低風險。
+  // 其餘語音（家事、銀行、違規等）不需要在這裡預播——它們各自第一次真正播放的時機
+  // （切到家事／銀行分頁、送出訂單／家事）本身就是在使用者手勢的同一個同步呼叫鏈裡，
+  // 會自然完成 iOS 要求的「手勢當下播放過一次」解鎖，不依賴這裡的預播。
+  (voiceKeysToPrime || []).forEach(key => {
+    const def = VOICE_ASSETS[key];
+    if (def && def.prime !== false) primeVoice(key, def);
+  });
 }
 
 // 切頁／切分頁時呼叫：取消尚未播放的哨音→語音序列，以及還在排隊、尚未真正開始播放的 Voice。
@@ -4803,7 +4813,10 @@ function _maybePlayBirthdayVoice(childId) {
 async function enterRestaurant() {
   try { await Tone.start(); } catch(e) {}
   resizeCanvas(); // 保險重新量一次 #fx-canvas 尺寸——進餐廳這個當下版面一定已經穩定，避免萬一頁面剛載入時量到 0 尺寸，後續拉炮／金幣光等粒子效果整個看不到
-  _primeAudioForMobileAutoplay(); // iOS Safari 等行動瀏覽器會擋「setTimeout／await 之後才第一次 play() 的音檔」，這裡在真正的使用者手勢當下先靜音解鎖一次
+  // 只預播這次真的會播放的那一支語音（生日或一般歡迎二選一），不是全部 9 支——
+  // 詳見 _primeAudioForMobileAutoplay() 內的說明
+  const _voiceKeyToPrime = (isBirthdayToday(currentChild) && VOICE_ASSETS.foxBirthday.ready !== false) ? 'foxBirthday' : 'bearRestaurantWelcome';
+  _primeAudioForMobileAutoplay([_voiceKeyToPrime]); // iOS Safari 等行動瀏覽器會擋「setTimeout／await 之後才第一次 play() 的音檔」，這裡在真正的使用者手勢當下先靜音解鎖一次
   _hasEnteredRestaurant = true;
   updateBackgroundAudio(true); // 首次強制套用，確保背景音第一次 play() 發生在這次使用者互動流程內
 
