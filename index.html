@@ -187,16 +187,21 @@ body {
 }
 /* 信封（關閉狀態）跟卡片（展開狀態）共用同一套寬度邏輯（約螢幕寬度 6 成，設上限避免
    在大螢幕上過度誇張），這樣「信封展開變成卡片」視覺上是同一個物件在變化，
-   不是一個小圖示突然跳成一個不成比例的大方塊。 */
+   不是一個小圖示突然跳成一個不成比例的大方塊。
+   關閉狀態故意不給背景／邊框——讓信封本身直接浮在遮罩上、去背無框；
+   展開後才由 .card-opened 補上卡片感的米白底／咖啡邊框／陰影。 */
 .birthday-box {
   --bday-w: min(60vw, 420px);
+  width:var(--bday-w); max-width:94vw; max-height:90vh; overflow-y:auto;
+  text-align:center; padding:8px 0;
+}
+.birthday-box.card-opened {
   background:var(--cream); border:3px solid var(--cocoa); border-radius:20px;
-  padding:24px 20px; width:var(--bday-w); max-width:94vw; max-height:90vh; overflow-y:auto;
-  box-shadow:5px 5px 0 var(--cocoa); text-align:center;
+  padding:24px 20px; box-shadow:5px 5px 0 var(--cocoa);
 }
 /* 信封改用真正的 <button>，支援鍵盤 Enter／Space 觸發與 focus-visible 焦點樣式，
-   不是只能滑鼠點擊的 div；圖形本身用 SVG 畫真正的信封形狀（矩形信封本體＋三角形
-   信封蓋，都有跟網站一致的粗咖啡色邊框），不是拿禮物盒 emoji 充當信封。*/
+   不是只能滑鼠點擊的 div；圖形本身用 SVG 畫信封形狀，去背、不描邊框，改用柔和陰影
+   （drop-shadow）做出立體感，不是硬邊框的方塊拼貼。*/
 .birthday-envelope-btn {
   cursor:pointer; user-select:none; background:none; border:none; padding:4px;
   font-family:inherit; display:inline-block; width:100%;
@@ -209,13 +214,15 @@ body {
 .birthday-envelope-btn.no-anim { animation:none; }
 .birthday-envelope-btn:disabled { cursor:default; }
 /* 點下去之後：信封蓋子先「掀開」（縮扁＋往上淡出），信封本體跟著往下淡出縮小，
-   看起來像信封真的被打開、卡片才從裡面冒出來，不是圖示瞬間被整個換掉。 */
+   看起來像信封真的被打開、卡片才從裡面冒出來，不是圖示瞬間被整個換掉。
+   時間拉長一點（flap 0.7s、body 0.6s，總長跟 JS 的 ENVELOPE_OPEN_ANIM_MS 對齊），
+   避免整段互動感覺太趕。 */
 .envelope-flap {
   transform-origin: 80px 22px;
-  transition: transform 0.45s cubic-bezier(0.34,1.56,0.64,1), opacity 0.35s ease 0.15s;
+  transition: transform 0.7s cubic-bezier(0.34,1.56,0.64,1), opacity 0.5s ease 0.25s;
 }
 .envelope-body {
-  transition: transform 0.4s ease 0.2s, opacity 0.4s ease 0.2s;
+  transition: transform 0.6s ease 0.35s, opacity 0.6s ease 0.35s;
 }
 .birthday-envelope-btn.opening .envelope-flap { transform: scaleY(0.05) translateY(-6px); opacity: 0; }
 .birthday-envelope-btn.opening .envelope-body { transform: translateY(12px) scale(0.85); opacity: 0; }
@@ -223,7 +230,7 @@ body {
   .envelope-flap, .envelope-body { transition: none; }
 }
 .birthday-content { display:none; }
-.birthday-content.open { display:block; animation: birthdayCardOpen 0.45s ease-out; }
+.birthday-content.open { display:block; animation: birthdayCardOpen 0.6s ease-out; }
 @keyframes birthdayEnvelopeBob {
   0%,100% { transform:translateY(0) rotate(-2deg); }
   50%     { transform:translateY(-6px) rotate(2deg); }
@@ -3202,9 +3209,10 @@ function openBirthdayCard(childId) {
       <div class="birthday-box" role="dialog" aria-modal="true" aria-label="${m.name} 的生日卡片">
         <button type="button" class="birthday-envelope-btn${reduceMotion ? ' no-anim' : ''}" id="birthday-envelope" aria-label="打開生日禮物信封" onclick="_openBirthdayEnvelope('${childId}')">
           <svg class="envelope-svg" viewBox="0 0 160 110" style="overflow:visible;">
-            <rect class="envelope-body" x="5" y="20" width="150" height="85" rx="10" fill="var(--mango)" stroke="var(--cocoa)" stroke-width="4"/>
-            <text class="envelope-body" x="80" y="88" font-size="30" text-anchor="middle">💌</text>
-            <polygon class="envelope-flap" points="5,20 80,68 155,20" fill="var(--mango-dark)" stroke="var(--cocoa)" stroke-width="4" stroke-linejoin="round"/>
+            <rect class="envelope-body" x="5" y="20" width="150" height="85" rx="16" fill="var(--mango)" style="filter:drop-shadow(3px 5px 0 rgba(61,43,31,0.3));"/>
+            <polygon class="envelope-flap" points="5,20 80,66 155,20" fill="var(--mango-dark)"/>
+            <circle class="envelope-body" cx="80" cy="66" r="16" fill="var(--rose)" style="filter:drop-shadow(1px 2px 0 rgba(61,43,31,0.25));"/>
+            <text class="envelope-body" x="80" y="72" font-size="17" text-anchor="middle">💌</text>
           </svg>
         </button>
         <div class="birthday-content" id="birthday-content">
@@ -3233,6 +3241,8 @@ function openBirthdayCard(childId) {
     if (reduceMotion) {
       if (envelopeBtn) { envelopeBtn.style.display = 'none'; envelopeBtn.disabled = true; }
       document.getElementById('birthday-content').classList.add('open');
+      const boxEl0 = document.querySelector('.birthday-box');
+      if (boxEl0) boxEl0.classList.add('card-opened');
       const greetingEl = document.getElementById('birthday-greeting-text');
       if (greetingEl) greetingEl.innerHTML = greetingHtml;
       const ageEl = document.getElementById('birthday-age-text');
@@ -3281,11 +3291,11 @@ function _burstBirthdayConfetti() {
   });
 }
 
-// 信封打開的動畫分兩段：① 信封蓋子掀開＋信封本體淡出縮小（見 CSS .opening 規則，約 0.5 秒），
-// ② 動畫播完才真正隱藏信封、展開卡片內容，讓「打開信封」在視覺上是連貫的一個動作，
-// 不是圖示瞬間被整個換掉。ENVELOPE_OPEN_ANIM_MS 要跟 CSS transition 時間對齊
-// （flap 0.45s + 0.15s delay ≈ 0.6s，這裡抓 550ms 留一點餘裕，不用抓到剛好卡秒對齊）。
-const ENVELOPE_OPEN_ANIM_MS = 550;
+// 信封打開的動畫分兩段：① 信封蓋子掀開＋信封本體淡出縮小（見 CSS .opening 規則，約 1 秒，
+// 刻意放慢，避免整段互動感覺太趕），② 動畫播完才真正隱藏信封、展開卡片內容，讓「打開信封」
+// 在視覺上是連貫的一個動作，不是圖示瞬間被整個換掉。ENVELOPE_OPEN_ANIM_MS 要跟 CSS
+// transition 時間對齊（flap 0.7s + 0.25s delay ≈ 0.95s，這裡抓 950ms）。
+const ENVELOPE_OPEN_ANIM_MS = 950;
 function _openBirthdayEnvelope(childId) {
   if (window.__birthdayDebug) window.__birthdayDebug.envelopeClicked++; // 🔧暫時除錯，測試完成後移除
   const envelope = document.getElementById('birthday-envelope');
@@ -3300,6 +3310,8 @@ function _openBirthdayEnvelope(childId) {
   function revealContent() {
     envelope.style.display = 'none';
     content.classList.add('open');
+    const boxEl = document.querySelector('.birthday-box');
+    if (boxEl) boxEl.classList.add('card-opened'); // 這時候才補上卡片感的米白底／咖啡邊框
     if (reduceMotion) {
       // 正常情況下 reduceMotion 時信封已經被隱藏＋disabled，不會走到這裡；保留純粹保險，
       // 確保就算真的被觸發，文字也是整段直接顯示，不會意外播放打字動畫。
@@ -3319,10 +3331,10 @@ function _openBirthdayEnvelope(childId) {
     const ageEl = document.getElementById('birthday-age-text');
     const showRest = () => { if (restEl) restEl.style.opacity = '1'; };
     const typeAge = () => {
-      if (ageEl && texts.ageHtml) _typeRevealHtml(ageEl, texts.ageHtml, 90, showRest);
+      if (ageEl && texts.ageHtml) _typeRevealHtml(ageEl, texts.ageHtml, 140, showRest);
       else showRest();
     };
-    if (greetingEl && texts.greetingHtml) _typeRevealHtml(greetingEl, texts.greetingHtml, 90, typeAge);
+    if (greetingEl && texts.greetingHtml) _typeRevealHtml(greetingEl, texts.greetingHtml, 140, typeAge);
     else typeAge();
   }
 
