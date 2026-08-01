@@ -2356,6 +2356,18 @@ function _taipeiMonthDay(now = new Date()) {
     day:   Number(parts.find(p => p.type === 'day').value)
   };
 }
+
+// ── 季節性背景音樂／環境音（2026-08-01 定案）──────────────────────────────
+// 純日期判斷，不需要後端資料，跟 _taipeiMonthDay() 同一套時區來源。
+// 12 月整月：BGM 完整換成聖誕主題（取代 bgmDay／bgmNight，環境音維持原本日夜邏輯不變）。
+function _isChristmasSeason(now = new Date()) {
+  return _taipeiMonthDay(now).month === 12;
+}
+// 10/24～10/31：疊加萬聖節環境音效在既有環境音之上，不取代任何東西。
+function _isHalloweenSeason(now = new Date()) {
+  const { month, day } = _taipeiMonthDay(now);
+  return month === 10 && day >= 24 && day <= 31;
+}
 // window.__forestTestBirthdayChildId：本機測試專用覆寫，只影響「要不要顯示卡片」這個前端判斷，
 // 不影響後端 claimBirthdayReward() 的真實日期判斷——所以就算測試時強制顯示卡片，按下「收下禮物」
 // 送到後端還是會被判定 not_birthday，不會真的發放金幣。
@@ -4442,6 +4454,11 @@ const AUDIO_ASSETS_MIN = {
   ambienceNightBugs:  { file: 'sounds/ambience/ambient_night_bugs_loop_01.mp3',     volume: 0.22, loop: true, category: 'ambient' },
   bgmDay:             { file: 'sounds/bgm/bgm_forest_cafe_day_loop_01.mp3',         volume: 0.42, loop: true, category: 'bgm' },
   bgmNight:           { file: 'sounds/bgm/bgm_forest_cafe_night_loop_01.mp3',       volume: 0.42, loop: true, category: 'bgm' },
+  // 季節性素材（2026-08-01 定案，見 _isChristmasSeason()／_isHalloweenSeason()）：
+  // 音檔尚未生成，路徑先照既有命名慣例登記，播放失敗會被 playAudioAsset() 既有的
+  // try/catch 安全吃掉（跟其他資產一樣），不用等音檔到位才能先接程式邏輯。
+  bgmChristmas:       { file: 'sounds/bgm/bgm_forest_cafe_christmas_loop_01.mp3',   volume: 0.42, loop: true, category: 'bgm' },
+  ambienceHalloween:  { file: 'sounds/ambience/ambient_halloween_loop_01.mp3',      volume: 0.24, loop: true, category: 'ambient' },
 };
 const _audioAssetPool = {};
 const _audioAssetWarned = new Set();
@@ -4564,12 +4581,15 @@ function isNightTime(now = new Date()) {
 
 function startNightAudio() {
   // playAudioAsset() 內建的 loop 幂等保護會確保多次呼叫不重播、不疊加
-  playAudioAsset('bgmNight');
+  // 12 月：BGM 換成聖誕主題，取代 bgmNight；環境音（夜蟲）維持原本邏輯不變。
+  playAudioAsset(_isChristmasSeason() ? 'bgmChristmas' : 'bgmNight');
   playAudioAsset('ambienceNightBugs');
+  // 10/24～10/31：疊加萬聖節環境音效在既有環境音之上，不取代任何東西。
+  if (_isHalloweenSeason()) playAudioAsset('ambienceHalloween');
 }
 
 function stopNightAudio() {
-  ['bgmNight', 'ambienceNightBugs'].forEach(key => {
+  ['bgmNight', 'bgmChristmas', 'ambienceNightBugs', 'ambienceHalloween'].forEach(key => {
     try {
       const audio = _audioAssetPool[key];
       if (!audio) return; // 尚未建立過，沒有東西可以停
@@ -4583,13 +4603,16 @@ function stopNightAudio() {
 
 function startDayAudio() {
   // 與 startNightAudio() 相同：playAudioAsset() 內建的 loop 幂等保護會確保多次呼叫不重播、不疊加
-  playAudioAsset('bgmDay');
+  // 12 月：BGM 換成聖誕主題，取代 bgmDay；環境音（鳥叫／餐廳環境）維持原本邏輯不變。
+  playAudioAsset(_isChristmasSeason() ? 'bgmChristmas' : 'bgmDay');
   playAudioAsset('forestDayAmbience'); // Audio UX v1.0：鳥叫＋輕柔餐盤環境聲，Ambient 分類，預設開啟且不受音樂開關影響
   playAudioAsset('restaurantAmbience');
+  // 10/24～10/31：疊加萬聖節環境音效在既有環境音之上，不取代任何東西。
+  if (_isHalloweenSeason()) playAudioAsset('ambienceHalloween');
 }
 
 function stopDayAudio() {
-  ['bgmDay', 'forestDayAmbience', 'restaurantAmbience'].forEach(key => {
+  ['bgmDay', 'bgmChristmas', 'forestDayAmbience', 'restaurantAmbience', 'ambienceHalloween'].forEach(key => {
     try {
       const audio = _audioAssetPool[key];
       if (!audio) return; // 尚未建立過，沒有東西可以停
