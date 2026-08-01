@@ -2369,24 +2369,28 @@ function isBirthdayToday(childId, now = new Date()) {
   } catch(e) { return false; }
 }
 
-// ── 生日／節日／天氣進站語音優先序（2026-08-01 定案）──────────────────────
-// 天氣語音檔名對照表：音檔還沒上傳完成，先留 null，_maybePlayMenuContextVoice()
-// 遇到 null 會直接跳過天氣、安全降級到下一順位。等 Ally 補上真實檔案路徑後才會真的播放，
-// 這裡不自行猜測檔名。
+// ── 生日／節日／天氣進站語音優先序（2026-08-01 定案，2026-08-01 天氣改版）────────
+// 天氣改成「會不會下雨」×「氣溫三段（熱／一般／冷）」共 6 種組合，對應後端
+// updateWeatherSetting() 寫入的 weather.type：rain_hot／rain_normal／rain_cold／
+// dry_hot／dry_normal／dry_cold。每種都是完整、自然的一句話，不是分段拼接。
+// 音檔還沒上傳完成，先留 null，_maybePlayMenuContextVoice() 遇到 null 會直接跳過
+// 天氣、安全降級到下一順位。等 Ally 補上真實檔案路徑後才會真的播放，這裡不自行猜測檔名。
 const WEATHER_VOICE_FILES = {
-  sunny: null,
-  cloudy: null,
-  fog: null,
-  rain: null,
-  thunderstorm: null,
+  dry_hot: null,
+  dry_normal: null,
+  dry_cold: null,
+  rain_hot: null,
+  rain_normal: null,
+  rain_cold: null,
 };
 // 天氣氣泡台詞先定案（不依賴音檔是否已上傳），音檔補齊後文字不用再改。
 const WEATHER_SPEECH_TEXT = {
-  sunny: '今天天氣晴朗，記得防曬再出門喔！☀️',
-  cloudy: '今天天空有點多雲，出門可以帶件薄外套！☁️',
-  fog: '今天起霧了，走路要小心慢慢來喔！🌫️',
-  rain: '今天會下雨，別忘記帶把小雨傘！🌧️',
-  thunderstorm: '今天有雷雨，記得帶傘，在外面要多加小心！⛈️',
+  dry_hot: '今天不會下雨，不過天氣很熱，記得多喝水、做好防曬喔！☀️',
+  dry_normal: '今天天氣不錯，不會下雨，出門玩很剛好喔！🌤️',
+  dry_cold: '今天不會下雨，不過有點涼，記得多穿件外套喔！🧥',
+  rain_hot: '今天會下雨，而且天氣悶熱，記得帶傘，也要多補充水分喔！🌧️',
+  rain_normal: '今天會下雨，記得帶把小雨傘再出門喔！☔',
+  rain_cold: '今天會下雨又有點冷，記得帶傘，也要多穿件外套保暖喔！🌂',
 };
 
 // 每位小孩、每個台灣日期只判斷一次生日／節日／天氣／一般語音的優先序；用 localStorage
@@ -3572,7 +3576,10 @@ async function loadInterestRate() {
 
 // 媽媽後台唯讀檢查：只讀 checkWeather（不呼叫外部 API，也不提供手動更新按鈕，
 // 天氣資料只由後端每天 06:00 的 updateWeatherSetting() 觸發器更新）。
-const WEATHER_TYPE_LABELS = { sunny: '☀️ 晴天', cloudy: '☁️ 多雲', fog: '🌫️ 起霧', rain: '🌧️ 下雨', thunderstorm: '⛈️ 雷雨' };
+const WEATHER_TYPE_LABELS = {
+  dry_hot: '☀️ 不下雨・熱', dry_normal: '🌤️ 不下雨・一般', dry_cold: '🧥 不下雨・冷',
+  rain_hot: '🌧️ 下雨・熱', rain_normal: '☔ 下雨・一般', rain_cold: '🌂 下雨・冷'
+};
 async function loadWeatherHolidayStatus() {
   const weatherEl = document.getElementById('mama-weather-status');
   const holidayEl = document.getElementById('mama-holiday-status');
