@@ -2376,12 +2376,12 @@ function isBirthdayToday(childId, now = new Date()) {
 // 音檔還沒上傳完成，先留 null，_maybePlayMenuContextVoice() 遇到 null 會直接跳過
 // 天氣、安全降級到下一順位。等 Ally 補上真實檔案路徑後才會真的播放，這裡不自行猜測檔名。
 const WEATHER_VOICE_FILES = {
-  dry_hot: null,
-  dry_normal: null,
-  dry_cold: null,
-  rain_hot: null,
-  rain_normal: null,
-  rain_cold: null,
+  dry_hot: 'sounds/voice/fox_weather_dry_hot.mp3',
+  dry_normal: 'sounds/voice/fox_weather_dry_normal.mp3',
+  dry_cold: 'sounds/voice/fox_weather_dry_cold.mp3',
+  rain_hot: 'sounds/voice/fox_weather_rain_hot.mp3',
+  rain_normal: 'sounds/voice/fox_weather_rain_normal.mp3',
+  rain_cold: 'sounds/voice/fox_weather_rain_cold.mp3',
 };
 // 天氣氣泡台詞先定案（不依賴音檔是否已上傳），音檔補齊後文字不用再改。
 const WEATHER_SPEECH_TEXT = {
