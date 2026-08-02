@@ -1166,10 +1166,12 @@ body.audio-settings-open { overflow: hidden; }
       <div style="padding:12px 12px 0;">
         <div class="sheet-title" style="margin-bottom:8px;">🌤️ 今日情境語音狀態（唯讀）</div>
         <div style="font-size:13px;line-height:1.8;background:#f5ede4;border:2px solid var(--cocoa);border-radius:12px;padding:10px 12px;">
+          <div>📅 今日日期：<span id="mama-today-date">載入中…</span>（Asia/Taipei）</div>
           <div>☁️ 天氣：<span id="mama-weather-status">載入中…</span></div>
           <div>🎉 節日：<span id="mama-holiday-status">載入中…</span></div>
         </div>
-        <div style="font-size:11px;color:var(--cocoa-soft);margin-top:6px;">天氣每天 06:00 由後端自動更新；節日請直接編輯 Google Sheet 的 Holidays 工作表</div>
+        <div id="mama-context-decision" style="font-size:13px;line-height:1.8;background:#f5ede4;border:2px solid var(--cocoa);border-radius:12px;padding:10px 12px;margin-top:8px;">載入中…</div>
+        <div style="font-size:11px;color:var(--cocoa-soft);margin-top:6px;">天氣每天 06:00 由後端自動更新；節日請直接編輯 Google Sheet 的 Holidays 工作表；下方「預計播放」僅為現在進站的模擬判斷，不代表小孩裝置上是否已經播過（那筆記錄存在小孩自己裝置的瀏覽器裡，後台看不到）</div>
       </div>
     </div>
 
@@ -1437,6 +1439,47 @@ const API = "https://script.google.com/macros/s/AKfycbzPZHE2q1BG0KfCe4sSJfsJLqSX
     const testChild = new URLSearchParams(window.location.search).get('testBirthday');
     if (testChild === 'candice' || testChild === 'harris') {
       window.__forestTestBirthdayChildId = testChild;
+    }
+  } catch (e) {}
+})();
+
+// 🧪 測試預覽站專用：網址加 ?testWeather=<type> 強制覆寫今日天氣情境（例如 ?testWeather=rain_cold），
+// 只影響前端「要播哪一句」的判斷（見 _resolveContextVoiceDecision()），不呼叫後端、不修改任何資料。
+// 有效值：dry_hot／dry_normal／dry_cold／rain_hot／rain_normal／rain_cold
+(function () {
+  try {
+    const testWeather = new URLSearchParams(window.location.search).get('testWeather');
+    const validTypes = ['dry_hot', 'dry_normal', 'dry_cold', 'rain_hot', 'rain_normal', 'rain_cold'];
+    if (validTypes.indexOf(testWeather) !== -1) {
+      window.__forestTestWeatherOverride = { available: true, date: getTaipeiTodayStr(), type: testWeather };
+    }
+  } catch (e) {}
+})();
+
+// 🧪 測試預覽站專用：網址加 ?testHoliday=<key> 強制覆寫今日節日情境，內容跟 Holidays 工作表現有
+// 資料一致（純測試用固定對照表，方便驗證音檔路徑，不代表正式節日判斷改成寫死——正式判斷仍完全
+// 資料驅動自 Holidays 工作表，見 getTodayHoliday()）。
+(function () {
+  try {
+    const testHoliday = new URLSearchParams(window.location.search).get('testHoliday');
+    const HOLIDAY_TEST_FIXTURES = {
+      halloween:        { holiday_name: '萬聖節',     audio_file: 'fox_holiday_halloween.mp3',        speech_text: '萬聖節快樂！要糖果還是搗蛋呢，今天餐館也充滿驚喜喔！' },
+      dad_birthday:     { holiday_name: '爸爸生日提醒', audio_file: 'fox_holiday_dad_birthday.mp3',     speech_text: '還有兩天就是把拔的生日囉，要不要一起準備給把拔的驚喜呢？' },
+      mom_birthday:     { holiday_name: '媽媽生日提醒', audio_file: 'fox_holiday_mom_birthday.mp3',     speech_text: '還有兩天就是馬麻的生日囉，要不要一起準備給馬麻的驚喜呢？' },
+      fathersday:       { holiday_name: '父親節',     audio_file: 'fox_holiday_fathersday.mp3',       speech_text: '父親節快樂！記得跟把拔說一聲謝謝喔！' },
+      mothersday:       { holiday_name: '母親節',     audio_file: 'fox_holiday_mothersday.mp3',       speech_text: '母親節快樂！記得跟馬麻說一聲謝謝喔！' },
+      grandma_birthday: { holiday_name: '外婆生日',   audio_file: 'fox_holiday_grandma_birthday.mp3', speech_text: '今天是外婆的生日喔！要不要跟外婆說聲生日快樂呢？' },
+      christmaseve:     { holiday_name: '聖誕夜',     audio_file: 'fox_holiday_christmaseve.mp3',     speech_text: '乖乖早點睡覺喔，今天是聖誕夜，聖誕老公公要來送禮物囉！' },
+      christmas:        { holiday_name: '聖誕節',     audio_file: 'fox_holiday_christmas.mp3',        speech_text: '聖誕節快樂！森林餐館祝你有美好的一天！' },
+      newyear:          { holiday_name: '元旦',       audio_file: 'fox_holiday_newyear.mp3',          speech_text: '新年快樂！新的一年，森林餐館陪你一起加油！' },
+      dragonboat:       { holiday_name: '端午節',     audio_file: 'fox_holiday_dragonboat.mp3',       speech_text: '端午節快樂！吃粽子的時候要小心燙喔！' },
+      midautumn:        { holiday_name: '中秋節',     audio_file: 'fox_holiday_midautumn.mp3',        speech_text: '中秋節快樂！記得看看月亮，烤肉也要注意安全喔！' },
+      lunarnewyear:     { holiday_name: '農曆新年',   audio_file: 'fox_holiday_lunarnewyear.mp3',     speech_text: '新年快樂！祝你在新的一年裡健康又開心！' },
+      // 反面測試：驗證「找不到節日／音檔時安全跳過」——testHoliday=missing 會給一個沒有 audio_file 的假節日
+      missing:          { holiday_name: '測試用缺檔節日', audio_file: '', speech_text: '' }
+    };
+    if (HOLIDAY_TEST_FIXTURES[testHoliday]) {
+      window.__forestTestHolidayOverride = HOLIDAY_TEST_FIXTURES[testHoliday];
     }
   } catch (e) {}
 })();
@@ -2420,6 +2463,40 @@ function _markContextVoiceJudgedToday(childId) {
 // 只取數字比對兩個日期字串是否代表同一天，不管是 "yyyy/MM/dd" 還是 "yyyy-MM-dd"。
 function _dateStrDigitsOnly(s) { return String(s || '').replace(/[^0-9]/g, ''); }
 
+// 生日／節日／天氣優先序的純判斷邏輯，不做任何播放副作用——同時給實際播放
+// （_maybePlayMenuContextVoice）和媽媽後台唯讀診斷（loadWeatherHolidayStatus）共用，
+// 避免兩邊各寫一份判斷邏輯，日後改規則卻只改到一邊。
+// window.__forestTestHolidayOverride／__forestTestWeatherOverride：預覽站測試用覆寫掛勾，
+// 平常是 undefined 完全不影響正式行為；只有 forest-preview 專屬的網址參數解析（?testHoliday=
+// ／?testWeather=）才會設定它們，正式站程式碼完全一樣、但沒有任何地方會去設定這兩個變數。
+function _resolveContextVoiceDecision(childId, data) {
+  if (!data) return { tier: 'none', label: '無資料', holidaySkipReason: '無資料', weatherSkipReason: '無資料' };
+
+  if (isBirthdayToday(childId)) {
+    return { tier: 'birthday', label: '本人生日' };
+  }
+
+  const holiday = (typeof window !== 'undefined' && window.__forestTestHolidayOverride) || data.holiday;
+  if (holiday && holiday.audio_file && holiday.speech_text) {
+    return { tier: 'holiday', label: holiday.holiday_name || '節日', holiday };
+  }
+  const holidaySkipReason = holiday
+    ? '今日節日資料缺少 audio_file 或 speech_text，安全降級'
+    : '今日無節日資料';
+
+  const weather = (typeof window !== 'undefined' && window.__forestTestWeatherOverride) || data.weather;
+  const weatherDateMatches = weather && _dateStrDigitsOnly(weather.date) === _dateStrDigitsOnly(getTaipeiTodayStr());
+  if (weather && weather.available === true && weatherDateMatches && WEATHER_VOICE_FILES[weather.type]) {
+    return { tier: 'weather', label: WEATHER_TYPE_LABELS[weather.type] || weather.type, weather };
+  }
+  let weatherSkipReason;
+  if (!weather || weather.available !== true) weatherSkipReason = '今日無天氣資料';
+  else if (!weatherDateMatches) weatherSkipReason = '天氣資料日期與今天不符';
+  else weatherSkipReason = '天氣音檔尚未設定：' + weather.type;
+
+  return { tier: 'general', label: '一般歡迎語音', holidaySkipReason, weatherSkipReason };
+}
+
 // 每位小孩台灣當天第一次切進小熊美味餐館菜單分頁時呼叫（見 renderMenu()）。
 // 依「生日 > 節日 > 天氣 > 一般語音」優先序只選一種播放，同一天之後再進菜單一律走一般語音。
 // 生日／節日／天氣任一項資料不齊全或音檔缺失，都直接安全降級到下一順位，不讓進站流程卡住。
@@ -2436,33 +2513,28 @@ async function _maybePlayMenuContextVoice(childId, data) {
     try { await window._welcomeEnterSoundPromise; } catch(e) {}
   }
 
+  const decision = _resolveContextVoiceDecision(childId, data);
+
   // 1. 生日：沿用既有生日語音／生日卡流程，不在這裡碰 bear-speech 泡泡（生日卡本身就是專屬呈現）
-  if (isBirthdayToday(childId)) {
+  if (decision.tier === 'birthday') {
     _maybePlayBirthdayVoice(childId);
     return;
   }
 
   // 2. 節日：Holidays 資料或音檔任一缺失就安全降級到天氣，不猜測內容
-  const holiday = data.holiday;
-  if (holiday && holiday.audio_file && holiday.speech_text) {
-    VOICE_ASSETS.contextHoliday.file = holiday.audio_file;
-    setMascotSpeech('bear', holiday.speech_text, {
+  if (decision.tier === 'holiday') {
+    VOICE_ASSETS.contextHoliday.file = decision.holiday.audio_file;
+    setMascotSpeech('bear', decision.holiday.speech_text, {
       audio: 'contextHoliday',
       audioEvent: 'contextHoliday_' + childId + '_' + getTaipeiTodayStr()
     });
     return;
   }
 
-  // 3. 天氣：後端 getTodayWeather_() 已經只在「今天」且 available===true 才回傳非 null，
-  // 這裡再防呆比對一次日期字串，且音檔還沒配置好（WEATHER_VOICE_FILES 是 null）就跳過。
-  const weather = data.weather;
-  if (
-    weather && weather.available === true &&
-    _dateStrDigitsOnly(weather.date) === _dateStrDigitsOnly(getTaipeiTodayStr()) &&
-    WEATHER_VOICE_FILES[weather.type]
-  ) {
-    VOICE_ASSETS.contextWeather.file = WEATHER_VOICE_FILES[weather.type];
-    setMascotSpeech('bear', WEATHER_SPEECH_TEXT[weather.type] || '', {
+  // 3. 天氣
+  if (decision.tier === 'weather') {
+    VOICE_ASSETS.contextWeather.file = WEATHER_VOICE_FILES[decision.weather.type];
+    setMascotSpeech('bear', WEATHER_SPEECH_TEXT[decision.weather.type] || '', {
       audio: 'contextWeather',
       audioEvent: 'contextWeather_' + childId + '_' + getTaipeiTodayStr()
     });
@@ -3592,9 +3664,20 @@ const WEATHER_TYPE_LABELS = {
   dry_hot: '☀️ 不下雨・熱', dry_normal: '🌤️ 不下雨・一般', dry_cold: '🧥 不下雨・冷',
   rain_hot: '🌧️ 下雨・熱', rain_normal: '☔ 下雨・一般', rain_cold: '🌂 下雨・冷'
 };
+// tier → 中文標籤，只用在媽媽後台的唯讀顯示，不影響任何播放判斷
+const CONTEXT_VOICE_TIER_LABELS = {
+  birthday: '🎂 本人生日語音',
+  holiday: '🎉 節日語音',
+  weather: '☁️ 天氣語音',
+  general: '👋 一般歡迎語音',
+  none: '（無資料）'
+};
 async function loadWeatherHolidayStatus() {
   const weatherEl = document.getElementById('mama-weather-status');
   const holidayEl = document.getElementById('mama-holiday-status');
+  const dateEl = document.getElementById('mama-today-date');
+  const decisionEl = document.getElementById('mama-context-decision');
+  if (dateEl) dateEl.textContent = getTaipeiTodayStr();
   try {
     const res = await fetch(API + '?action=checkWeather');
     const data = await res.json();
@@ -3610,9 +3693,26 @@ async function loadWeatherHolidayStatus() {
         ? `${h.holiday_name}（音檔：${h.audio_file || '未設定'}）`
         : '今日無資料';
     }
+    if (decisionEl) {
+      const rows = Object.keys(MEMBERS).map(childId => {
+        const name = MEMBERS[childId].name || childId;
+        const decision = _resolveContextVoiceDecision(childId, data);
+        let line = `${name}：${CONTEXT_VOICE_TIER_LABELS[decision.tier] || decision.tier}`;
+        if (decision.tier === 'holiday') line += `（${decision.label}，音檔：${decision.holiday.audio_file}）`;
+        else if (decision.tier === 'weather') line += `（${decision.label}，音檔：${WEATHER_VOICE_FILES[decision.weather.type]}）`;
+        if (decision.tier === 'general') {
+          line += `<br><span style="font-size:11px;color:var(--cocoa-soft);">未播節日原因：${decision.holidaySkipReason || '—'}／未播天氣原因：${decision.weatherSkipReason || '—'}</span>`;
+        } else if (decision.tier === 'weather' && decision.holidaySkipReason) {
+          line += `<br><span style="font-size:11px;color:var(--cocoa-soft);">未播節日原因：${decision.holidaySkipReason}</span>`;
+        }
+        return `<div style="margin-bottom:6px;">${line}</div>`;
+      });
+      decisionEl.innerHTML = '<div style="font-weight:bold;margin-bottom:4px;">若現在進站，預計播放：</div>' + rows.join('');
+    }
   } catch(e) {
     if (weatherEl) weatherEl.textContent = '讀取失敗';
     if (holidayEl) holidayEl.textContent = '讀取失敗';
+    if (decisionEl) decisionEl.textContent = '讀取失敗';
   }
 }
 
