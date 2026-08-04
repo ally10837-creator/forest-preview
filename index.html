@@ -1500,7 +1500,7 @@ const API = "https://script.google.com/macros/s/AKfycbzPZHE2q1BG0KfCe4sSJfsJLqSX
 // Safari 開發者工具可用的裝置（iPad）直接截圖回報，不用再靠文字描述「有沒有聲音」。
 // FOREST_PREVIEW_BUILD_MARKER 每次部署都會更新，用來確認畫面上看到的真的是最新版本，
 // 不是瀏覽器快取的舊版（GitHub Pages 這個 repo 的 Cache-Control 是 10 分鐘）。
-const FOREST_PREVIEW_BUILD_MARKER = '2026-08-04T13:40-build6';
+const FOREST_PREVIEW_BUILD_MARKER = '2026-08-04T15:30-build7-loadall-trigger-fix';
 (function () {
   try {
     const el = document.createElement('div');
@@ -2084,6 +2084,7 @@ async function saveDriveToSheet() {
 // ══════════════════════════════════════════════
 
 async function loadAll() {
+  _debugOverlay({ stage: 'loadall-start' });
   try {
     const [cRes, hRes] = await Promise.all([
       fetch(API + '?user=candice'),
@@ -2117,6 +2118,7 @@ async function loadAll() {
       });
     });
     updateBalanceDisplay();
+    _debugOverlay({ stage: 'loadall-success', candiceLoaded: !!allData.candice, harrisLoaded: !!allData.harris });
     const childPageActive = document.getElementById('child-page')?.classList.contains('active');
     if (childPageActive) {
       requestAnimationFrame(() => {
@@ -2125,7 +2127,19 @@ async function loadAll() {
         checkInterestNotification();
       });
     }
+    // 情境語音（生日／節日／天氣／一般）的判斷不能只靠上面那段——那段是「畫面渲染」，只在
+    // child-page 這個當下剛好已經是 active 才會跑。如果使用者點「進入餐館」之前資料就先抓回來了
+    // （child-page 那時候還沒有 active class），上面整段會被跳過，之後也沒有其他觸發點會重新判斷，
+    // 只能靠使用者剛好切換分頁才會意外重新渲染到——這是真正的根因，不是自動播放政策本身。
+    // 這裡明確補一次：只要已經進入餐館（不管 DOM 上 child-page 這個當下是否剛好標記 active），
+    // 資料一到就針對目前選中的小孩主動判斷一次。_maybePlayMenuContextVoice 內部本來就有
+    // once-per-day／in-flight 防重機制，跟上面 renderSubTab('menu') 可能觸發的那次不會重複播放。
+    if (_hasEnteredRestaurant && allData[currentChild]) {
+      _debugOverlay({ stage: 'loadall-triggers-context-voice', currentChild });
+      _maybePlayMenuContextVoice(currentChild, allData[currentChild]);
+    }
   } catch(e) {
+    _debugOverlay({ stage: 'loadall-failed', error: e.message });
     showToast('⚠️ 載入失敗，請檢查網路', 'error');
   }
 }
@@ -2551,9 +2565,17 @@ function _resolveContextVoiceDecision(childId, data) {
 // 即時顯示在畫面上一個小面板，方便沒有 DevTools 可用的裝置（iPad）直接截圖回報。正式站沒有定義
 // 這個變數，呼叫時只是安靜跳過，不影響任何行為。
 function _debugOverlay(info) {
+  try { console.log('[context-voice]', (performance.now()|0) + 'ms', JSON.stringify(info)); } catch(e) {}
   try { window.__forestDebugOverlay && window.__forestDebugOverlay(info); } catch(e) {}
 }
 
+// loadAll() 資料回來後會主動觸發一次判斷（見 loadAll() 內的說明），如果剛好那個當下
+// child-page 也已經是 active，renderSubTab('menu') 自己也會觸發一次——兩次呼叫幾乎同時
+// 開始，playVoiceAsset() 內建的 eventKey in-flight 防重視窗太窄擋不住（第一次呼叫在
+// 「真正開始播放」那一刻就會解除 in-flight 標記，此時第二次呼叫還沒檢查到，會被排進佇列，
+// 造成同一句話播完接著又重播一次）。這裡用 childId 這一層額外防重，確保同一個小孩同一時間
+// 只有一個判斷在跑，不影響「已判斷過就不重跑」這個既有規則。
+const _contextVoiceJudgingInFlight = new Set();
 async function _maybePlayMenuContextVoice(childId, data) {
   if (!data) {
     _debugOverlay({ stage: 'no-data', childId });
@@ -2564,7 +2586,19 @@ async function _maybePlayMenuContextVoice(childId, data) {
     playVoiceAsset('bearRestaurantWelcome'); // 今天已經判斷過特殊語音，一律回退成一般迎賓語音
     return;
   }
+  if (_contextVoiceJudgingInFlight.has(childId)) {
+    _debugOverlay({ stage: 'judging-in-flight-skip', childId });
+    return;
+  }
+  _contextVoiceJudgingInFlight.add(childId);
+  try {
+    await _maybePlayMenuContextVoiceInner(childId, data);
+  } finally {
+    _contextVoiceJudgingInFlight.delete(childId);
+  }
+}
 
+async function _maybePlayMenuContextVoiceInner(childId, data) {
   // 既有進站音效播完才進語音，避免疊在一起（見 enterRestaurant() 的 window._welcomeEnterSoundPromise）
   if (window._welcomeEnterSoundPromise) {
     try { await window._welcomeEnterSoundPromise; } catch(e) {}
@@ -5417,7 +5451,9 @@ function _maybePlayBirthdayVoice(childId) {
 
 // ── WELCOME PAGE ──
 async function enterRestaurant() {
+  _debugOverlay({ stage: 'enterRestaurant-start' });
   await _primeAudioForMobileAutoplay(); // iOS Safari 先做一次無聲解鎖；不觸碰正式音檔、不進語音佇列、不寫播放紀錄
+  _debugOverlay({ stage: 'audio-primed' });
   try { await _withTimeout(Tone.start().catch(() => {}), 400); } catch(e) {}
   resizeCanvas(); // 保險重新量一次 #fx-canvas 尺寸——進餐廳這個當下版面一定已經穩定，避免萬一頁面剛載入時量到 0 尺寸，後續拉炮／金幣光等粒子效果整個看不到
   _hasEnteredRestaurant = true;
