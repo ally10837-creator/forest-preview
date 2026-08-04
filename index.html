@@ -1483,6 +1483,18 @@ const API = "https://script.google.com/macros/s/AKfycbzPZHE2q1BG0KfCe4sSJfsJLqSX
     }
   } catch (e) {}
 })();
+
+// 🧪 測試預覽站專用：網址加 ?resetContextVoice=1 清掉兩位小孩今天的「已判斷」記號，
+// 方便同一天內重複測試不同天氣／節日情境，不用等到隔天或手動清 localStorage。
+(function () {
+  try {
+    if (new URLSearchParams(window.location.search).get('resetContextVoice') === '1') {
+      ['candice', 'harris'].forEach(id => {
+        localStorage.removeItem('forest_context_voice_done_' + getTaipeiTodayStr() + '_' + id);
+      });
+    }
+  } catch (e) {}
+})();
 const VERSION = "v56"; // ← 程式碼版本
 
 // ── GOLD COIN SVG helper ──
@@ -2500,13 +2512,16 @@ function _resolveContextVoiceDecision(childId, data) {
 // 每位小孩台灣當天第一次切進小熊美味餐館菜單分頁時呼叫（見 renderMenu()）。
 // 依「生日 > 節日 > 天氣 > 一般語音」優先序只選一種播放，同一天之後再進菜單一律走一般語音。
 // 生日／節日／天氣任一項資料不齊全或音檔缺失，都直接安全降級到下一順位，不讓進站流程卡住。
+// 重要：只有語音「真的開始播放」才會寫入今天判斷過的記號（見下方 if (played) 判斷）。
+// 如果瀏覽器擋掉自動播放（例如太晚才呼叫、沒有使用者互動關聯）導致沒真的播出來，
+// 就不標記，讓下次任何一次 renderMenu()（切分頁、切小孩、資料重新整理…）都能重新嘗試，
+// 不會因為第一次沒播成功就整天卡死、之後只能拿到安靜的一般語音。
 async function _maybePlayMenuContextVoice(childId, data) {
   if (!data) return;
   if (_hasContextVoiceBeenJudgedToday(childId)) {
     playVoiceAsset('bearRestaurantWelcome'); // 今天已經判斷過特殊語音，一律回退成一般迎賓語音
     return;
   }
-  _markContextVoiceJudgedToday(childId); // 不論下面判斷出哪一種（甚至什麼都沒有），今天都只判斷這一次
 
   // 既有進站音效播完才進語音，避免疊在一起（見 enterRestaurant() 的 window._welcomeEnterSoundPromise）
   if (window._welcomeEnterSoundPromise) {
@@ -2514,38 +2529,37 @@ async function _maybePlayMenuContextVoice(childId, data) {
   }
 
   const decision = _resolveContextVoiceDecision(childId, data);
+  let played = false;
 
   // 1. 生日：沿用既有生日語音／生日卡流程，不在這裡碰 bear-speech 泡泡（生日卡本身就是專屬呈現）
   if (decision.tier === 'birthday') {
-    _maybePlayBirthdayVoice(childId);
-    return;
-  }
+    played = await _maybePlayBirthdayVoice(childId);
 
   // 2. 節日：Holidays 資料或音檔任一缺失就安全降級到天氣，不猜測內容
-  if (decision.tier === 'holiday') {
+  } else if (decision.tier === 'holiday') {
     VOICE_ASSETS.contextHoliday.file = decision.holiday.audio_file;
-    setMascotSpeech('bear', decision.holiday.speech_text, {
+    played = await setMascotSpeech('bear', decision.holiday.speech_text, {
       audio: 'contextHoliday',
       audioEvent: 'contextHoliday_' + childId + '_' + getTaipeiTodayStr()
     });
-    return;
-  }
 
   // 3. 天氣
-  if (decision.tier === 'weather') {
+  } else if (decision.tier === 'weather') {
     VOICE_ASSETS.contextWeather.file = WEATHER_VOICE_FILES[decision.weather.type];
-    setMascotSpeech('bear', WEATHER_SPEECH_TEXT[decision.weather.type] || '', {
+    played = await setMascotSpeech('bear', WEATHER_SPEECH_TEXT[decision.weather.type] || '', {
       audio: 'contextWeather',
       audioEvent: 'contextWeather_' + childId + '_' + getTaipeiTodayStr()
     });
-    return;
-  }
 
   // 4. 一般進站語音
-  setMascotSpeech('bear', '歡迎光臨！今天的美食出爐囉！', {
-    audio: 'bearRestaurantWelcome',
-    audioEvent: 'bearRestaurantWelcome'
-  });
+  } else {
+    played = await setMascotSpeech('bear', '歡迎光臨！今天的美食出爐囉！', {
+      audio: 'bearRestaurantWelcome',
+      audioEvent: 'bearRestaurantWelcome'
+    });
+  }
+
+  if (played) _markContextVoiceJudgedToday(childId);
 }
 
 // 從 created_at 字串（格式如 "2026/06/21 14:30"）取出日期部分，統一成 yyyy-MM-dd 以便比較
@@ -5007,13 +5021,14 @@ function setMascotSpeech(mascotKey, text, options = {}) {
       consumePenaltyIntent: options.consumePenaltyIntent,
     });
   } else {
-    playVoiceAsset(options.audio, {
+    return playVoiceAsset(options.audio, {
       eventKey: options.audioEvent,
       skipOncePerPage: !!options.skipOncePerPage,
     }).then(ok => {
       if (ok && options.consumePenaltyIntent && options.childKey) {
         _pendingPenaltyAudioFromNavigation.delete(options.childKey);
       }
+      return ok;
     });
   }
 }
@@ -5332,8 +5347,9 @@ function pandaOfficerSVG(size=72) {
 // 互不干擾，各自在本次網頁生命週期只播一次，也不會因為在兩個分頁間切來切去而重複播放。
 function _maybePlayBirthdayVoice(childId) {
   if (isBirthdayToday(childId)) {
-    playVoiceAsset('foxBirthday', { eventKey: 'foxBirthday_' + childId });
+    return playVoiceAsset('foxBirthday', { eventKey: 'foxBirthday_' + childId });
   }
+  return Promise.resolve(false);
 }
 
 // ── WELCOME PAGE ──
