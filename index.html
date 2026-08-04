@@ -1500,7 +1500,7 @@ const API = "https://script.google.com/macros/s/AKfycbzPZHE2q1BG0KfCe4sSJfsJLqSX
 // Safari 開發者工具可用的裝置（iPad）直接截圖回報，不用再靠文字描述「有沒有聲音」。
 // FOREST_PREVIEW_BUILD_MARKER 每次部署都會更新，用來確認畫面上看到的真的是最新版本，
 // 不是瀏覽器快取的舊版（GitHub Pages 這個 repo 的 Cache-Control 是 10 分鐘）。
-const FOREST_PREVIEW_BUILD_MARKER = '2026-08-04T16:20-build8-explicit-skipreason-log';
+const FOREST_PREVIEW_BUILD_MARKER = '2026-08-04T17:15-build9-singleflight-timeout-retry';
 (function () {
   try {
     const el = document.createElement('div');
@@ -1816,11 +1816,11 @@ function showPage(page) {
       switchSubTab(currentSubTab, true);
     }
     if (!allData[currentChild]) {
-      loadAll();
+      loadAll('showPage-child-missing-data');
     } else {
       const cacheTime = Number(sessionStorage.getItem('menu_cache_time') || 0);
       const cacheAge  = Date.now() - cacheTime;
-      if (cacheAge > 5 * 60 * 1000) loadAll();
+      if (cacheAge > 5 * 60 * 1000) loadAll('showPage-cache-stale');
     }
   }
 }
@@ -1836,7 +1836,7 @@ async function switchChild(id) {
   // 生日／節日／天氣／一般語音的優先序判斷已經統一移到 switchSubTab('menu') 觸發的
   // _maybePlayMenuContextVoice()，這裡不再直接播生日語音，避免跟菜單分頁的判斷重疊。
   switchSubTab(currentSubTab, true);
-  await loadAll();             // 再重新抓取最新資料，三個頁籤（餐館/家事/我的訂單）一起同步更新
+  await loadAll('switchChild');             // 再重新抓取最新資料，三個頁籤（餐館/家事/我的訂單）一起同步更新
 }
 
 // ── SUB TABS ──
@@ -2096,8 +2096,64 @@ async function saveDriveToSheet() {
 
 // ══════════════════════════════════════════════
 
-async function loadAll() {
-  _debugOverlay({ stage: 'loadall-start' });
+// ── 資料載入：single-flight + timeout + 自動重試一次 ──────────────────────────
+// Safari 實機證實：Apps Script 後端偶爾一次請求會遲遲不 settle（很可能是 GAS 冷啟動）。舊版
+// 每次呼叫 loadAll() 都各自發一組新的 fetch——page-load 的自動呼叫、enterRestaurant() 途中
+// showPage() 判斷資料還沒到又呼叫一次——等於同時間卡住兩、三個各自等不到回應的請求，
+// 直到使用者切分頁時「運氣好」剛好後端已經熱了、那次請求秒回才成功。
+// 這裡改成：1) single-flight，同時間只有一個真正的後端請求在跑，重複呼叫共用同一個 Promise，
+// 不會再疊加出多個永遠等不到回應的請求；2) LOAD_ALL_TIMEOUT_MS 逾時視為失敗，不會無限期卡住；
+// 3) 逾時且使用者已進站、今天還沒播過情境語音時，自動重試一次，不需要使用者手動做任何事。
+const LOAD_ALL_TIMEOUT_MS = 8000;
+let _loadAllInFlightPromise = null;
+let _loadAllRequestSeq = 0;
+
+function _raceTimeout(promise, ms) {
+  let timer;
+  const timeout = new Promise(resolve => { timer = setTimeout(() => resolve('__TIMEOUT__'), ms); });
+  return Promise.race([promise.then(v => { clearTimeout(timer); return v; }), timeout]);
+}
+
+async function loadAll(reason = 'unspecified') {
+  if (_loadAllInFlightPromise) {
+    _debugOverlay({ stage: 'loadall-superseded', reason, currentChildId: currentChild });
+    return _loadAllInFlightPromise;
+  }
+  _loadAllInFlightPromise = _loadAllAttempt(reason, false);
+  try {
+    return await _loadAllInFlightPromise;
+  } finally {
+    _loadAllInFlightPromise = null;
+  }
+}
+
+async function _loadAllAttempt(reason, isRetry) {
+  const requestId = ++_loadAllRequestSeq;
+  const startedAt = performance.now();
+  _debugOverlay({ stage: 'loadall-start', requestId, reason, isRetry, currentChildId: currentChild });
+  const outcome = await _raceTimeout(_loadAllFetchAndApply(), LOAD_ALL_TIMEOUT_MS);
+  const durationMs = (performance.now() - startedAt) | 0;
+  if (outcome === '__TIMEOUT__') {
+    _debugOverlay({ stage: 'loadall-timeout', requestId, reason, durationMs });
+    if (!isRetry && _hasEnteredRestaurant && !_hasContextVoiceBeenJudgedToday(currentChild)) {
+      _debugOverlay({ stage: 'loadall-auto-retry', requestId, reason });
+      return _loadAllAttempt(reason + '-retry', true);
+    }
+    return false;
+  }
+  if (outcome === 'failed') {
+    _debugOverlay({ stage: 'loadall-failed', requestId, reason, durationMs });
+    showToast('⚠️ 載入失敗，請檢查網路', 'error');
+    return false;
+  }
+  _debugOverlay({ stage: 'loadall-success', requestId, reason, durationMs, candiceLoaded: !!allData.candice, harrisLoaded: !!allData.harris });
+  _checkAndTriggerContextVoice('loadall-success');
+  return true;
+}
+
+// 純粹「發請求、套用結果」，不處理 timeout／重試／single-flight——那些是上面 _loadAllAttempt
+// 的責任。回傳 'ok' 或 'failed'，不 throw，讓呼叫端統一處理。
+async function _loadAllFetchAndApply() {
   try {
     const [cRes, hRes] = await Promise.all([
       fetch(API + '?user=candice'),
@@ -2131,7 +2187,6 @@ async function loadAll() {
       });
     });
     updateBalanceDisplay();
-    _debugOverlay({ stage: 'loadall-success', candiceLoaded: !!allData.candice, harrisLoaded: !!allData.harris });
     const childPageActive = document.getElementById('child-page')?.classList.contains('active');
     if (childPageActive) {
       requestAnimationFrame(() => {
@@ -2140,10 +2195,9 @@ async function loadAll() {
         checkInterestNotification();
       });
     }
-    _checkAndTriggerContextVoice('loadall-success');
+    return 'ok';
   } catch(e) {
-    _debugOverlay({ stage: 'loadall-failed', error: e.message });
-    showToast('⚠️ 載入失敗，請檢查網路', 'error');
+    return 'failed';
   }
 }
 
@@ -2609,7 +2663,14 @@ async function _maybePlayMenuContextVoice(childId, data) {
 // 呼叫點觸發這次檢查，方便從 log 分辨。
 function _checkAndTriggerContextVoice(reason) {
   const childId = currentChild;
-  const data = allData[childId];
+  // forest-preview 測試覆寫（?testHoliday=／?testWeather=／?testBirthday=）一旦在網址上帶入，
+  // window.__forestTestHolidayOverride 等變數在 page-load 當下就已經是完整資料，不需要、也不該
+  // 等真正的後端 allData 回來才能判斷——那樣測試會被後端速度拖累，跟測試覆寫的本意矛盾。這裡只要
+  // 偵測到任一種測試覆寫存在，就視為「資料已就緒」，遞給 _resolveContextVoiceDecision() 一個空殼
+  // data 物件（反正 override 優先序高於 data.holiday／data.weather，內容是什麼不重要）。
+  // 正式站沒有任何地方會設定這些 window 變數，這個分支永遠不會啟用，不影響正式行為。
+  const hasTestOverride = !!(window.__forestTestHolidayOverride || window.__forestTestWeatherOverride || window.__forestTestBirthdayChildId);
+  const data = allData[childId] || (hasTestOverride ? { holiday: null, weather: null } : null);
   const childPageActive = !!document.getElementById('child-page')?.classList.contains('active');
   const dataReady = !!data;
   const inFlight = _contextVoiceJudgingInFlight.has(childId);
@@ -2629,6 +2690,7 @@ function _checkAndTriggerContextVoice(reason) {
     childPageActive,
     currentChildId: childId,
     currentSubTab,
+    hasTestOverride,
     dataReady,
     inFlight,
     alreadyPlayedToday,
@@ -5541,7 +5603,7 @@ document.getElementById('wcd-bunny').innerHTML    = bunnyIMG(92);
 document.getElementById('wcd-bear').innerHTML     = bearChefIMG(88);
 document.getElementById('wcd-hamster').innerHTML  = hamsterIMG(88);
 document.getElementById('bank-tab-icon').src = IMG_HEDGEHOG;
-loadAll();
+loadAll('page-load');
 
 // 顯示歡迎頁
 (function() {
