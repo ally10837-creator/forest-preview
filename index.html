@@ -1495,6 +1495,37 @@ const API = "https://script.google.com/macros/s/AKfycbzPZHE2q1BG0KfCe4sSJfsJLqSX
     }
   } catch (e) {}
 })();
+
+// 🧪 測試預覽站專用：畫面下方常駐一個小面板，即時顯示情境語音每一步判斷結果，方便沒有
+// Safari 開發者工具可用的裝置（iPad）直接截圖回報，不用再靠文字描述「有沒有聲音」。
+// FOREST_PREVIEW_BUILD_MARKER 每次部署都會更新，用來確認畫面上看到的真的是最新版本，
+// 不是瀏覽器快取的舊版（GitHub Pages 這個 repo 的 Cache-Control 是 10 分鐘）。
+const FOREST_PREVIEW_BUILD_MARKER = '2026-08-04T13:40-build6';
+(function () {
+  try {
+    const el = document.createElement('div');
+    el.id = 'forest-debug-overlay';
+    el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:99999;background:rgba(0,0,0,0.88);color:#7CFC00;font:11px/1.4 monospace;padding:6px 8px;max-height:38vh;overflow-y:auto;white-space:pre-wrap;pointer-events:none;';
+    document.body.appendChild(el);
+    const lines = [];
+    const render = () => { el.textContent = 'BUILD ' + FOREST_PREVIEW_BUILD_MARKER + '\n' + lines.join('\n'); };
+    window.__forestDebugOverlay = function (info) {
+      try {
+        const time = new Date().toLocaleTimeString('zh-TW', { hour12: false });
+        lines.push('[' + time + '] ' + JSON.stringify(info));
+        while (lines.length > 14) lines.shift();
+        render();
+      } catch (e) {}
+    };
+    window.__forestDebugOverlay({
+      stage: 'page-load',
+      url: window.location.search,
+      holidayOverride: window.__forestTestHolidayOverride ? window.__forestTestHolidayOverride.holiday_name : null,
+      weatherOverride: window.__forestTestWeatherOverride ? window.__forestTestWeatherOverride.type : null,
+      birthdayOverride: window.__forestTestBirthdayChildId || null
+    });
+  } catch (e) {}
+})();
 const VERSION = "v56"; // ← 程式碼版本
 
 // ── GOLD COIN SVG helper ──
@@ -2516,9 +2547,20 @@ function _resolveContextVoiceDecision(childId, data) {
 // 如果瀏覽器擋掉自動播放（例如太晚才呼叫、沒有使用者互動關聯）導致沒真的播出來，
 // 就不標記，讓下次任何一次 renderMenu()（切分頁、切小孩、資料重新整理…）都能重新嘗試，
 // 不會因為第一次沒播成功就整天卡死、之後只能拿到安靜的一般語音。
+// window.__forestDebugOverlay(info)：只有 forest-preview 才會定義這個 hook，用來把每一步判斷
+// 即時顯示在畫面上一個小面板，方便沒有 DevTools 可用的裝置（iPad）直接截圖回報。正式站沒有定義
+// 這個變數，呼叫時只是安靜跳過，不影響任何行為。
+function _debugOverlay(info) {
+  try { window.__forestDebugOverlay && window.__forestDebugOverlay(info); } catch(e) {}
+}
+
 async function _maybePlayMenuContextVoice(childId, data) {
-  if (!data) return;
+  if (!data) {
+    _debugOverlay({ stage: 'no-data', childId });
+    return;
+  }
   if (_hasContextVoiceBeenJudgedToday(childId)) {
+    _debugOverlay({ stage: 'already-judged', childId });
     playVoiceAsset('bearRestaurantWelcome'); // 今天已經判斷過特殊語音，一律回退成一般迎賓語音
     return;
   }
@@ -2529,6 +2571,7 @@ async function _maybePlayMenuContextVoice(childId, data) {
   }
 
   const decision = _resolveContextVoiceDecision(childId, data);
+  _debugOverlay({ stage: 'decision', childId, tier: decision.tier, label: decision.label });
   let played = false;
 
   // 1. 生日：沿用既有生日語音／生日卡流程，不在這裡碰 bear-speech 泡泡（生日卡本身就是專屬呈現）
@@ -2564,6 +2607,7 @@ async function _maybePlayMenuContextVoice(childId, data) {
     });
   }
 
+  _debugOverlay({ stage: 'played-result', childId, tier: decision.tier, played, file: VOICE_ASSETS.contextHoliday.file || VOICE_ASSETS.contextWeather.file });
   if (played) _markContextVoiceJudgedToday(childId);
 }
 
