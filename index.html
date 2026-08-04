@@ -1500,7 +1500,7 @@ const API = "https://script.google.com/macros/s/AKfycbzPZHE2q1BG0KfCe4sSJfsJLqSX
 // Safari 開發者工具可用的裝置（iPad）直接截圖回報，不用再靠文字描述「有沒有聲音」。
 // FOREST_PREVIEW_BUILD_MARKER 每次部署都會更新，用來確認畫面上看到的真的是最新版本，
 // 不是瀏覽器快取的舊版（GitHub Pages 這個 repo 的 Cache-Control 是 10 分鐘）。
-const FOREST_PREVIEW_BUILD_MARKER = '2026-08-04T15:30-build7-loadall-trigger-fix';
+const FOREST_PREVIEW_BUILD_MARKER = '2026-08-04T16:20-build8-explicit-skipreason-log';
 (function () {
   try {
     const el = document.createElement('div');
@@ -1513,16 +1513,29 @@ const FOREST_PREVIEW_BUILD_MARKER = '2026-08-04T15:30-build7-loadall-trigger-fix
       try {
         const time = new Date().toLocaleTimeString('zh-TW', { hour12: false });
         lines.push('[' + time + '] ' + JSON.stringify(info));
-        while (lines.length > 14) lines.shift();
+        while (lines.length > 40) lines.shift();
         render();
       } catch (e) {}
     };
     window.__forestDebugOverlay({
       stage: 'page-load',
-      url: window.location.search,
-      holidayOverride: window.__forestTestHolidayOverride ? window.__forestTestHolidayOverride.holiday_name : null,
-      weatherOverride: window.__forestTestWeatherOverride ? window.__forestTestWeatherOverride.type : null,
-      birthdayOverride: window.__forestTestBirthdayChildId || null
+      testHolidayParam: new URLSearchParams(window.location.search).get('testHoliday'),
+      url: window.location.search
+    });
+    window.__forestDebugOverlay({
+      stage: 'holiday-override-detail',
+      override: window.__forestTestHolidayOverride || null,
+      holiday_name: window.__forestTestHolidayOverride ? window.__forestTestHolidayOverride.holiday_name : null,
+      audio_file: window.__forestTestHolidayOverride ? window.__forestTestHolidayOverride.audio_file : null,
+      speech_text: window.__forestTestHolidayOverride ? window.__forestTestHolidayOverride.speech_text : null
+    });
+    window.__forestDebugOverlay({
+      stage: 'weather-override-detail',
+      override: window.__forestTestWeatherOverride || null
+    });
+    window.__forestDebugOverlay({
+      stage: 'birthday-override-detail',
+      override: window.__forestTestBirthdayChildId || null
     });
   } catch (e) {}
 })();
@@ -2127,17 +2140,7 @@ async function loadAll() {
         checkInterestNotification();
       });
     }
-    // 情境語音（生日／節日／天氣／一般）的判斷不能只靠上面那段——那段是「畫面渲染」，只在
-    // child-page 這個當下剛好已經是 active 才會跑。如果使用者點「進入餐館」之前資料就先抓回來了
-    // （child-page 那時候還沒有 active class），上面整段會被跳過，之後也沒有其他觸發點會重新判斷，
-    // 只能靠使用者剛好切換分頁才會意外重新渲染到——這是真正的根因，不是自動播放政策本身。
-    // 這裡明確補一次：只要已經進入餐館（不管 DOM 上 child-page 這個當下是否剛好標記 active），
-    // 資料一到就針對目前選中的小孩主動判斷一次。_maybePlayMenuContextVoice 內部本來就有
-    // once-per-day／in-flight 防重機制，跟上面 renderSubTab('menu') 可能觸發的那次不會重複播放。
-    if (_hasEnteredRestaurant && allData[currentChild]) {
-      _debugOverlay({ stage: 'loadall-triggers-context-voice', currentChild });
-      _maybePlayMenuContextVoice(currentChild, allData[currentChild]);
-    }
+    _checkAndTriggerContextVoice('loadall-success');
   } catch(e) {
     _debugOverlay({ stage: 'loadall-failed', error: e.message });
     showToast('⚠️ 載入失敗，請檢查網路', 'error');
@@ -2595,6 +2598,45 @@ async function _maybePlayMenuContextVoice(childId, data) {
     await _maybePlayMenuContextVoiceInner(childId, data);
   } finally {
     _contextVoiceJudgingInFlight.delete(childId);
+  }
+}
+
+// 情境語音的判斷不能只靠「畫面渲染」（renderSubTab／switchSubTab）——那條路徑只有在 child-page
+// 這個當下剛好已經是 active 才會跑。這裡是唯一、明確的觸發檢查點，loadAll() 資料回來時、以及
+// enterRestaurant() 進站當下都會各呼叫一次（兩種時序：先進站後資料到、先資料到後進站，都要涵蓋），
+// 不依賴 DOM 上 child-page 是否已經標記 active、不依賴 renderMenu／renderSubTab、不依賴使用者
+// 切分頁或再點畫面。每次呼叫都會輸出完整診斷（不管有沒有真的觸發），reason 用來標記是哪個
+// 呼叫點觸發這次檢查，方便從 log 分辨。
+function _checkAndTriggerContextVoice(reason) {
+  const childId = currentChild;
+  const data = allData[childId];
+  const childPageActive = !!document.getElementById('child-page')?.classList.contains('active');
+  const dataReady = !!data;
+  const inFlight = _contextVoiceJudgingInFlight.has(childId);
+  const alreadyPlayedToday = _hasContextVoiceBeenJudgedToday(childId);
+  const willTrigger = _hasEnteredRestaurant && dataReady && !inFlight && !alreadyPlayedToday;
+  let skipReason = null;
+  if (!willTrigger) {
+    if (!_hasEnteredRestaurant) skipReason = 'not-entered-restaurant-yet';
+    else if (!dataReady) skipReason = 'data-not-ready';
+    else if (inFlight) skipReason = 'already-in-flight';
+    else if (alreadyPlayedToday) skipReason = 'already-played-today';
+  }
+  _debugOverlay({
+    stage: 'context-trigger-check',
+    reason,
+    hasEnteredRestaurant: _hasEnteredRestaurant,
+    childPageActive,
+    currentChildId: childId,
+    currentSubTab,
+    dataReady,
+    inFlight,
+    alreadyPlayedToday,
+    willTrigger,
+    skipReason
+  });
+  if (willTrigger) {
+    _maybePlayMenuContextVoice(childId, data);
   }
 }
 
@@ -5457,6 +5499,7 @@ async function enterRestaurant() {
   try { await _withTimeout(Tone.start().catch(() => {}), 400); } catch(e) {}
   resizeCanvas(); // 保險重新量一次 #fx-canvas 尺寸——進餐廳這個當下版面一定已經穩定，避免萬一頁面剛載入時量到 0 尺寸，後續拉炮／金幣光等粒子效果整個看不到
   _hasEnteredRestaurant = true;
+  _checkAndTriggerContextVoice('enterRestaurant'); // 涵蓋「資料比使用者進站還早載入完成」這個時序
   updateBackgroundAudio(true); // 首次強制套用，確保背景音第一次 play() 發生在這次使用者互動流程內
 
   // waitForEnded：先記住這個 Promise，讓 _maybePlayMenuContextVoice()（見 switchSubTab('menu')
