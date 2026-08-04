@@ -2567,6 +2567,20 @@ async function _maybePlayMenuContextVoice(childId, data) {
   if (played) _markContextVoiceJudgedToday(childId);
 }
 
+// Safari 等瀏覽器的自動播放政策可能讓「剛進站、資料才剛非同步載入完」那次嘗試因為脫離使用者
+// 手勢而被擋掉。這裡加一個範圍限定在情境語音的重試：只要當天這位小孩還沒成功播放過，小孩頁面
+// 上任何一次點擊都會借用那個新的使用者手勢再嘗試一次——不影響其他既有點擊行為（passive 監聽、
+// 不 preventDefault），也不會造成重複播放：_hasContextVoiceBeenJudgedToday 一旦成功就不再重試，
+// 播放引擎本身（playVoiceAsset／_voicePlayAttemptInFlight／once-per-page）也已經有防重機制。
+document.addEventListener('click', () => {
+  if (!_hasEnteredRestaurant) return;
+  const childPageActive = document.getElementById('child-page')?.classList.contains('active');
+  if (!childPageActive) return;
+  const data = allData[currentChild];
+  if (!data || _hasContextVoiceBeenJudgedToday(currentChild)) return;
+  _maybePlayMenuContextVoice(currentChild, data);
+}, { passive: true });
+
 // 從 created_at 字串（格式如 "2026/06/21 14:30"）取出日期部分，統一成 yyyy-MM-dd 以便比較
 function extractDateStr(createdAt) {
   if (!createdAt) return '';
