@@ -2537,7 +2537,12 @@ async function _maybePlayMenuContextVoice(childId, data) {
 
   // 2. 節日：Holidays 資料或音檔任一缺失就安全降級到天氣，不猜測內容
   } else if (decision.tier === 'holiday') {
-    VOICE_ASSETS.contextHoliday.file = decision.holiday.audio_file;
+    // Holidays 工作表的 audio_file 只存純檔名（例如 fox_holiday_halloween.mp3），這裡要補上
+    // sounds/voice/ 資料夾路徑，音檔才找得到——之前漏了這一步，節日語音路徑一直是錯的（404）。
+    const holidayAudioFile = decision.holiday.audio_file;
+    VOICE_ASSETS.contextHoliday.file = holidayAudioFile.indexOf('sounds/voice/') === 0
+      ? holidayAudioFile
+      : 'sounds/voice/' + holidayAudioFile;
     played = await setMascotSpeech('bear', decision.holiday.speech_text, {
       audio: 'contextHoliday',
       audioEvent: 'contextHoliday_' + childId + '_' + getTaipeiTodayStr()
