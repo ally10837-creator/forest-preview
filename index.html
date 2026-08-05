@@ -1500,9 +1500,12 @@ const API = "https://script.google.com/macros/s/AKfycbzPZHE2q1BG0KfCe4sSJfsJLqSX
 // Safari 開發者工具可用的裝置（iPad）直接截圖回報，不用再靠文字描述「有沒有聲音」。
 // FOREST_PREVIEW_BUILD_MARKER 每次部署都會更新，用來確認畫面上看到的真的是最新版本，
 // 不是瀏覽器快取的舊版（GitHub Pages 這個 repo 的 Cache-Control 是 10 分鐘）。
+// 預設不建立、不顯示這個面板——只有網址明確帶 ?debugContextVoice=1 才會啟用，避免一般
+// 驗收（testWeather／testHoliday／resetContextVoice 等其他測試參數）畫面被面板擋住。
 const FOREST_PREVIEW_BUILD_MARKER = '2026-08-05T11:00-build10-context-bubble-protect';
 (function () {
   try {
+    if (new URLSearchParams(window.location.search).get('debugContextVoice') !== '1') return;
     const el = document.createElement('div');
     el.id = 'forest-debug-overlay';
     el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:99999;background:rgba(0,0,0,0.88);color:#7CFC00;font:11px/1.4 monospace;padding:6px 8px;max-height:38vh;overflow-y:auto;white-space:pre-wrap;pointer-events:none;';
