@@ -2190,7 +2190,12 @@ async function _loadAllFetchAndApply() {
     updateBalanceDisplay();
     const childPageActive = document.getElementById('child-page')?.classList.contains('active');
     if (childPageActive) {
-      requestAnimationFrame(() => {
+      // ★ 原本包在 requestAnimationFrame() 裡，rAF 是跟著瀏覽器畫面 paint 走的——分頁切到
+      // 背景（document.hidden）時瀏覽器會暫停/節流 rAF，導致 loadAll() 資料明明已經成功回來，
+      // 畫面卻卡在「載入中」，要等使用者手動操作才會刷新。改用 queueMicrotask()：不依賴
+      // paint 時機，幾乎立即執行，又不佔用目前 _loadAllFetchAndApply() 這個 async function
+      // 的呼叫堆疊（避免深層同步呼叫 renderSubTab 造成重入疑慮）。
+      queueMicrotask(() => {
         renderSubTab(currentSubTab);
         checkWeeklyReview(currentChild);
         checkInterestNotification();
