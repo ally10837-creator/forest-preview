@@ -1500,7 +1500,7 @@ const API = "https://script.google.com/macros/s/AKfycbzPZHE2q1BG0KfCe4sSJfsJLqSX
 // Safari 開發者工具可用的裝置（iPad）直接截圖回報，不用再靠文字描述「有沒有聲音」。
 // FOREST_PREVIEW_BUILD_MARKER 每次部署都會更新，用來確認畫面上看到的真的是最新版本，
 // 不是瀏覽器快取的舊版（GitHub Pages 這個 repo 的 Cache-Control 是 10 分鐘）。
-const FOREST_PREVIEW_BUILD_MARKER = '2026-08-04T17:15-build9-singleflight-timeout-retry';
+const FOREST_PREVIEW_BUILD_MARKER = '2026-08-05T11:00-build10-context-bubble-protect';
 (function () {
   try {
     const el = document.createElement('div');
@@ -1828,6 +1828,7 @@ function showPage(page) {
 // ── CHILD SWITCH ──
 async function switchChild(id) {
   currentChild = id;
+  _contextBubbleProtectedUntil = 0; // 切換孩子時不沿用上一位孩子的情境泡泡保護，避免卡住舊的天氣／節日文字
   document.getElementById('tab-candice').className = 'child-tab' + (id==='candice'?' active-candice':'');
   document.getElementById('tab-harris').className  = 'child-tab' + (id==='harris' ?' active-harris':'');
   updateCartFab(); // 切換後顯示該孩子自己的購物車數量
@@ -2224,7 +2225,10 @@ function renderMenu(data) {
     if (items.length === 0)       bearLine = '今天完售！大廚去補貨了，明天再來喔～😅';
     else if (hasSale)             bearLine = '快看！現在有特價！趁現在換，過時不候！🔥';
     else if (items.length <= 2)   bearLine = '今天快賣完了！動作要快，不然就沒了喔！';
-    bearSpeechEl.innerHTML = rb(bearLine);
+    // 情境語音（生日／節日／天氣）正在播或剛播完緩衝期內，泡泡文字先保護，不被一般選單文案蓋掉。
+    if (!_isContextBubbleProtected()) {
+      bearSpeechEl.innerHTML = rb(bearLine);
+    }
   }
 
   // 每位小孩台灣當天第一次切進這個分頁才會真的判斷／播放，見函式內部說明；
@@ -5021,6 +5025,20 @@ const VOICE_DUCK_FACTOR = 0.35; // Voice 播放時，BGM／Ambient 降到原音�
 const _duckableKeys = ['bgmDay', 'bgmNight', 'forestDayAmbience', 'restaurantAmbience', 'ambienceNightBugs'];
 const _voicePlayedThisPage = new Set();
 
+// ── 情境泡泡文字保護 ──────────────────────────────────────────────
+// renderMenu() 每次執行都會無條件把泡泡文字設成一般選單文案；進站流程裡 showPage() 常常會
+// 在情境語音（生日／節日／天氣）才剛播放完的瞬間再觸發一次 renderMenu()，把泡泡文字蓋掉，
+// 語音明明有正確播放，畫面上卻看不到對應的字。這裡加一個「情境泡泡保護中」的判斷：只要
+// 情境語音正在播（_voiceActiveKey 是這三個 key 之一），或播完後還在 3 秒緩衝期內，
+// renderMenu() 就先不動泡泡文字，讓情境文字有機會完整顯示、播完後也還留一下再換回一般文案。
+const CONTEXT_VOICE_KEYS = ['contextHoliday', 'contextWeather', 'foxBirthday'];
+const CONTEXT_BUBBLE_GRACE_MS = 3000;
+let _contextBubbleProtectedUntil = 0;
+function _isContextBubbleProtected() {
+  if (CONTEXT_VOICE_KEYS.indexOf(_voiceActiveKey) !== -1) return true; // 情境語音正在播
+  return Date.now() < _contextBubbleProtectedUntil; // 剛播完的緩衝期
+}
+
 function _duckBackgroundAudio(duck) {
   _duckableKeys.forEach(key => {
     const audio = _audioAssetPool[key];
@@ -5190,6 +5208,10 @@ function _startVoice(item) {
 function _onVoiceEnded() {
   if (_voiceActiveResolve) {
     try { _voiceActiveResolve(false); } catch(e) {}
+  }
+  // 情境語音（生日／節日／天氣）播完後，泡泡文字再保護 3 秒，見 _isContextBubbleProtected()。
+  if (CONTEXT_VOICE_KEYS.indexOf(_voiceActiveKey) !== -1) {
+    _contextBubbleProtectedUntil = Date.now() + CONTEXT_BUBBLE_GRACE_MS;
   }
   _voiceActiveKey = null;
   _voiceActiveEventKey = null;
