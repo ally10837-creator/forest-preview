@@ -2240,6 +2240,9 @@ function renderForestPet(data) {
 // petRoomTick() 裡把 staticImg.src 換成新圖就好，邏輯不用重寫。
 // ══════════════════════════════════════════════
 const PET_ROOM_SPEED = 24; // px/秒
+// 房間背景圖裡沙發大概從房間寬度的 48% 開始，貓咪走動範圍要留在這條線以左，
+// 才不會看起來像走進/疊在沙發上面。
+const PET_ROOM_SAFE_RIGHT_FRACTION = 0.47;
 let petRoomTimer = null;
 let petRoomBlinkTimer = null;
 let petRoomFacing = 1;
@@ -2254,6 +2257,15 @@ function petRoomEls() {
     walkFrames: document.getElementById('pet-room-walkframes'),
     staticImg: document.getElementById('pet-room-static'),
   };
+}
+
+// 理毛/睡覺/坐著/東張西望這幾個狀態貓咪不該移動位置——直接把 left 釘死在目前算出來的
+// 像素值，不要只是清掉 transition（萬一還有上一段走路動畫沒播完就切狀態，清 transition
+// 會讓貓咪瞬間跳去走路的終點，看起來像突然移動位置）。
+function freezePetRoomPosition(els) {
+  const curLeftPx = els.wrap.offsetLeft;
+  els.wrap.style.transition = '';
+  els.wrap.style.left = curLeftPx + 'px';
 }
 
 function setRoomStatus(text) {
@@ -2296,7 +2308,8 @@ function petRoomTick() {
     const roomWidth = els.room.clientWidth;
     const spriteWidth = els.wrap.offsetWidth || 56;
     const curLeftPx = els.wrap.offsetLeft;
-    const maxLeftPx = Math.max(0, roomWidth - spriteWidth);
+    const safeRightPx = roomWidth * PET_ROOM_SAFE_RIGHT_FRACTION;
+    const maxLeftPx = Math.max(0, Math.min(roomWidth - spriteWidth, safeRightPx - spriteWidth));
     const targetLeftPx = Math.random() * maxLeftPx;
     const distance = Math.abs(targetLeftPx - curLeftPx);
     duration = Math.max(1.5, distance / PET_ROOM_SPEED);
@@ -2312,19 +2325,19 @@ function petRoomTick() {
     setRoomStatus('貓咪走來走去～');
   } else if (state === 'idle') {
     duration = 2 + Math.random() * 2;
-    els.wrap.style.transition = '';
+    freezePetRoomPosition(els);
     els.walkFrames.style.display = 'none';
     els.staticImg.style.display = 'block';
     setRoomStatus('貓咪東張西望中…');
   } else if (state === 'sitting') {
     duration = 3 + Math.random() * 3;
-    els.wrap.style.transition = '';
+    freezePetRoomPosition(els);
     els.walkFrames.style.display = 'none';
     els.staticImg.style.display = 'block';
     setRoomStatus('貓咪坐著休息～');
   } else if (state === 'grooming') {
     duration = 3 + Math.random() * 2;
-    els.wrap.style.transition = '';
+    freezePetRoomPosition(els);
     els.walkFrames.style.display = 'none';
     els.staticImg.style.display = 'block';
     const fx = document.createElement('div');
@@ -2334,7 +2347,7 @@ function petRoomTick() {
     setRoomStatus('貓咪舔舔手，整理毛毛中～');
   } else { // sleeping
     duration = 6 + Math.random() * 5;
-    els.wrap.style.transition = '';
+    freezePetRoomPosition(els);
     els.walkFrames.style.display = 'none';
     els.staticImg.style.display = 'block';
     els.staticImg.style.transform = 'rotate(90deg)';
