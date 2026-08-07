@@ -132,14 +132,31 @@ body {
 
 /* ── PET (動物夥伴) — 領養邂逅畫面 ── */
 .pet-encounter {
-  margin: 24px 16px; background: white; border: var(--border); border-radius: var(--radius);
-  box-shadow: var(--shadow); padding: 22px 18px; text-align: center;
+  position: relative; margin: 24px 16px; background: linear-gradient(180deg,#eef2f5,#ffffff);
+  border: var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 22px 18px; text-align: center; overflow: hidden;
 }
-.pet-encounter-portrait { width: 140px; margin: 0 auto 14px; animation: petShy 2.4s ease-in-out infinite; }
-.pet-encounter-portrait img { width: 100%; display: block; filter: saturate(0.7) brightness(0.98); }
-@keyframes petShy {
-  0%, 100% { transform: translateY(0) rotate(0); }
-  50%      { transform: translateY(-6px) rotate(-2deg); }
+.pet-encounter-rain { position: absolute; inset: 0 0 auto 0; height: 46px; pointer-events: none; overflow: hidden; }
+.pet-encounter-rain span {
+  position: absolute; top: -14px; font-size: 11px; color: #9db8cc; opacity: 0.65;
+  animation: petRainFall 1.3s linear infinite;
+}
+@keyframes petRainFall { 0% { transform: translateY(0); opacity: 0; } 15% { opacity: 0.65; } 100% { transform: translateY(60px); opacity: 0; } }
+.pet-encounter-portrait { position: relative; width: 132px; margin: 10px auto 14px; animation: petShiver 1.7s ease-in-out infinite; }
+.pet-encounter-portrait img { width: 100%; display: block; filter: saturate(0.55) brightness(0.9); }
+.pet-encounter-tear { position: absolute; font-size: 15px; animation: petTearFall 1.8s ease-in infinite; }
+@keyframes petShiver {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  20%      { transform: translateY(-1px) rotate(-2deg); }
+  40%      { transform: translateY(0) rotate(2deg); }
+  60%      { transform: translateY(-2px) rotate(-1deg); }
+  80%      { transform: translateY(0) rotate(1deg); }
+}
+@keyframes petTearFall {
+  0%   { transform: translateY(0); opacity: 0; }
+  15%  { opacity: 0.9; }
+  70%  { opacity: 0.6; }
+  100% { transform: translateY(22px); opacity: 0; }
 }
 .pet-encounter-text { font-size: 14px; color: var(--cocoa); line-height: 1.7; margin-bottom: 18px; }
 .pet-encounter-actions { display: flex; gap: 10px; justify-content: center; }
@@ -260,6 +277,35 @@ body {
 }
 .pet-feed-btn:active { transform: translate(2px,2px); box-shadow: none; }
 .pet-feed-btn:disabled { background: #ddd; color: #999; cursor: not-allowed; box-shadow: none; border-color: #ccc; }
+
+/* ── PET 洗澡 ── */
+.pet-bath-btn {
+  width: 100%; background: var(--sky); color: white; border: 2px solid var(--cocoa); border-radius: 12px;
+  padding: 12px; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+  box-shadow: var(--shadow-sm); transition: all 0.1s;
+}
+.pet-bath-btn:active { transform: translate(2px,2px); box-shadow: none; }
+.pet-bath-btn:disabled { background: #ddd; color: #999; cursor: not-allowed; box-shadow: none; border-color: #ccc; }
+.pet-bubble { position: absolute; bottom: 10%; font-size: 20px; pointer-events: none; animation: petBubbleFloat 1.4s ease-in forwards; }
+@keyframes petBubbleFloat {
+  0%   { transform: translate(0,0) scale(0.6); opacity: 0; }
+  15%  { opacity: 1; }
+  100% { transform: translate(var(--bx,0px), -160px) scale(1.1); opacity: 0; }
+}
+.pet-bath-overlay {
+  position: absolute; inset: 0; pointer-events: none; border-radius: 16px;
+  background: linear-gradient(180deg, rgba(180,230,255,0), rgba(180,230,255,0.55));
+  animation: petBathOverlayFade 1.6s ease forwards;
+}
+@keyframes petBathOverlayFade { 0% { opacity: 0; } 20% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+.pet-portrait.shake-dry { animation: petShakeDry 0.6s ease; }
+@keyframes petShakeDry {
+  0%, 100% { transform: rotate(0deg); }
+  20%      { transform: rotate(-8deg); }
+  40%      { transform: rotate(7deg); }
+  60%      { transform: rotate(-5deg); }
+  80%      { transform: rotate(4deg); }
+}
 
 /* ── CHORE LIST ── */
 .chore-list { display:flex; flex-direction:column; gap:10px; padding: 0 12px 80px; }
@@ -2026,10 +2072,15 @@ const PET_FOOD_CATALOG = [
   { food_id: 'chicken',    food_name: '雞肉條', emoji: '🍗', exp: 14, desc: '豐盛的一餐' },
 ];
 const PET_DAILY_FEED_LIMIT = 3;
+const PET_BATH_CARE_POINTS = 8;
+// 一天最多能累積的照顧點數（不管餵食/摸摸/洗澡怎麼組合，當天超過這個數字就不再加成長值）。
+// 幼貓→少年貓抓約 30 天、少年貓→成貓抓約 90 天（三個月）持續照顧才能長大，
+// 而不是隨便點一點就升級，門檻用「每天上限 × 天數」反推出來。
+const PET_DAILY_CARE_CAP = 40;
 const PET_STAGES = [
-  { stage: 'baby',  min: 0,   label: '幼貓',  emoji: '🐣' },
-  { stage: 'young', min: 100, label: '少年貓', emoji: '🐱' },
-  { stage: 'adult', min: 300, label: '成貓',   emoji: '😺' },
+  { stage: 'baby',  min: 0,    label: '幼貓',  emoji: '🐣' },
+  { stage: 'young', min: 1200, label: '少年貓', emoji: '🐱' }, // 40 × 30 天
+  { stage: 'adult', min: 3600, label: '成貓',   emoji: '😺' }, // 40 × 90 天
 ];
 
 function petStorageKey(childId)  { return 'forest_pet_state_' + childId; }
@@ -2046,12 +2097,16 @@ function getPetState(childId) {
   if (!s) {
     s = {
       pet_id: 'pet_' + childId, child_id: childId, species: 'cat', pet_name: '貓咪',
-      stage: 'baby', exp_points: 0, today_feed_count: 0, last_feed_date_taipei: today,
-      last_touch_at: null, created_at: Date.now(), updated_at: Date.now()
+      stage: 'baby', exp_points: 0, today_feed_count: 0, today_care_points: 0, today_bath_done: false,
+      last_feed_date_taipei: today, last_touch_at: null, created_at: Date.now(), updated_at: Date.now()
     };
   }
+  if (s.today_care_points === undefined) s.today_care_points = 0; // 相容舊資料
+  if (s.today_bath_done === undefined) s.today_bath_done = false;
   if (s.last_feed_date_taipei !== today) {
     s.today_feed_count = 0;
+    s.today_care_points = 0;
+    s.today_bath_done = false;
     s.last_feed_date_taipei = today;
   }
   return s;
@@ -2066,6 +2121,17 @@ function petStageInfoForExp(exp) {
   let cur = PET_STAGES[0];
   for (const st of PET_STAGES) if (exp >= st.min) cur = st;
   return cur;
+}
+
+// 幫貓咪加照顧點數，但每天累計超過 PET_DAILY_CARE_CAP 就不再加成長值——
+// 讓「一直狂點」沒辦法插隊長大，真的要花時間持續照顧。回傳實際加到的量，
+// 方便呼叫端判斷今天的成長額度是不是已經用完了。
+function gainCarePoints(s, amount) {
+  const remaining = PET_DAILY_CARE_CAP - s.today_care_points;
+  const gained = Math.max(0, Math.min(amount, remaining));
+  s.exp_points += gained;
+  s.today_care_points += gained;
+  return gained;
 }
 
 function adoptPet() {
@@ -2088,10 +2154,20 @@ function renderForestPet(data) {
   if (!isPetAdopted(childId)) {
     el.innerHTML = `
       <div class="pet-encounter">
-        <div class="pet-encounter-portrait"><img src="img/pet/cat_portrait.png" alt="一隻迷路的小貓"></div>
-        <div class="pet-encounter-text">你在森林餐廳後院發現了一隻迷路的小貓，牠怯生生地看著你……<br>要收留牠嗎？</div>
+        <div class="pet-encounter-rain">
+          <span style="left:12%;animation-delay:0s;">💧</span>
+          <span style="left:34%;animation-delay:0.4s;">💧</span>
+          <span style="left:58%;animation-delay:0.8s;">💧</span>
+          <span style="left:78%;animation-delay:0.2s;">💧</span>
+        </div>
+        <div class="pet-encounter-portrait">
+          <img src="img/pet/cat_portrait.png" alt="一隻可憐的迷路小貓">
+          <div class="pet-encounter-tear" style="left:38%;top:44%;animation-delay:0.3s;">💧</div>
+          <div class="pet-encounter-tear" style="left:58%;top:44%;animation-delay:1.1s;">💧</div>
+        </div>
+        <div class="pet-encounter-text">你在森林餐廳後院，發現一隻全身濕答答、瑟瑟發抖的小貓蜷縮在角落，肚子餓得咕嚕叫，用水汪汪的大眼睛怯生生地看著你……<br>要帶牠回家嗎？</div>
         <div class="pet-encounter-actions">
-          <button class="pet-adopt-btn" onclick="adoptPet()">💕 領養牠</button>
+          <button class="pet-adopt-btn" onclick="adoptPet()">💕 帶牠回家</button>
           <button class="pet-decline-btn" onclick="declinePet()">先不要</button>
         </div>
       </div>`;
@@ -2123,7 +2199,11 @@ function renderForestPet(data) {
         </div>
       </div>
       <div class="section-title" style="padding-top:0;">🍖 今日點心 <span class="pill" id="pet-feed-count">0/3</span></div>
-      <div class="pet-food-grid" id="pet-food-grid"></div>`;
+      <div class="pet-food-grid" id="pet-food-grid"></div>
+      <div class="section-title" style="padding-top:0;">🛁 洗香香 <span class="pill" id="pet-bath-status">今天還沒洗</span></div>
+      <div style="padding:0 12px 90px;">
+        <button class="pet-bath-btn" id="pet-bath-btn" onclick="petBath()">🛁 幫貓咪洗澡</button>
+      </div>`;
   }
   updatePetStatsUI();
 }
@@ -2146,6 +2226,11 @@ function updatePetStatsUI() {
     : `經驗值 ${s.exp_points}（已達最高階段）`;
 
   document.getElementById('pet-feed-count').textContent = s.today_feed_count + '/' + PET_DAILY_FEED_LIMIT;
+
+  const bathBtn = document.getElementById('pet-bath-btn');
+  document.getElementById('pet-bath-status').textContent = s.today_bath_done ? '今天已洗香香' : '今天還沒洗';
+  bathBtn.disabled = s.today_bath_done;
+  bathBtn.textContent = s.today_bath_done ? '🛁 今天已經洗過了' : '🛁 幫貓咪洗澡';
 
   renderPetFood(s);
 }
@@ -2213,13 +2298,48 @@ function playPetFeedAnimation(emoji) {
   setTimeout(() => { petChewPortrait(); spawnPetYum(); }, 550);
 }
 
+function playPetBathAnimation() {
+  const stage = document.getElementById('pet-stage');
+
+  const overlay = document.createElement('div');
+  overlay.className = 'pet-bath-overlay';
+  stage.appendChild(overlay);
+  setTimeout(() => overlay.remove(), 1600);
+
+  for (let i = 0; i < 6; i++) {
+    setTimeout(() => {
+      const b = document.createElement('div');
+      b.className = 'pet-bubble';
+      b.textContent = '🫧';
+      b.style.left = (28 + Math.random() * 44) + '%';
+      b.style.setProperty('--bx', (Math.random() * 30 - 15) + 'px');
+      stage.appendChild(b);
+      setTimeout(() => b.remove(), 1400);
+    }, i * 150);
+  }
+
+  setTimeout(() => {
+    const portrait = document.getElementById('pet-portrait');
+    portrait.classList.remove('shake-dry');
+    void portrait.offsetWidth;
+    portrait.classList.add('shake-dry');
+    const sp = document.createElement('div');
+    sp.className = 'pet-yum';
+    sp.textContent = '✨';
+    stage.appendChild(sp);
+    setTimeout(() => sp.remove(), 1000);
+  }, 1300);
+}
+
 function petTouch() {
   const childId = currentChild;
   const s = getPetState(childId);
-  s.exp_points += 2;
+  const gained = gainCarePoints(s, 2);
   s.last_touch_at = Date.now();
   savePetState(childId, s);
-  document.getElementById('pet-hint').textContent = '貓咪瞇著眼睛，好像很喜歡被摸摸～';
+  document.getElementById('pet-hint').textContent = gained > 0
+    ? '貓咪瞇著眼睛，好像很喜歡被摸摸～'
+    : '貓咪今天已經被照顧很多囉，明天繼續累積成長點數吧！';
   petBouncePortrait();
   spawnPetHearts();
   updatePetStatsUI();
@@ -2234,12 +2354,30 @@ function petFeed(foodId) {
   }
   const food = PET_FOOD_CATALOG.find(f => f.food_id === foodId);
   if (!food) return;
-  s.exp_points += food.exp;
+  const gained = gainCarePoints(s, food.exp);
   s.today_feed_count += 1;
   s.last_touch_at = Date.now();
   savePetState(childId, s);
-  document.getElementById('pet-hint').textContent = `貓咪開心地吃掉了${food.food_name}！`;
+  document.getElementById('pet-hint').textContent = gained > 0
+    ? `貓咪開心地吃掉了${food.food_name}！`
+    : `貓咪開心地吃掉了${food.food_name}！（今天的成長點數已經滿了，明天繼續累積）`;
   playPetFeedAnimation(food.emoji);
+  updatePetStatsUI();
+}
+
+function petBath() {
+  const childId = currentChild;
+  const s = getPetState(childId);
+  if (s.today_bath_done) {
+    showToast('🛁 貓咪今天已經洗過澡囉，明天再洗吧！', 'error');
+    return;
+  }
+  s.today_bath_done = true;
+  gainCarePoints(s, PET_BATH_CARE_POINTS);
+  s.last_touch_at = Date.now();
+  savePetState(childId, s);
+  document.getElementById('pet-hint').textContent = '貓咪洗得香香的，變得亮晶晶！';
+  playPetBathAnimation();
   updatePetStatsUI();
 }
 
