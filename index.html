@@ -2240,10 +2240,12 @@ function renderForestPet(data) {
 // petRoomTick() 裡把 staticImg.src 換成新圖就好，邏輯不用重寫。
 // ══════════════════════════════════════════════
 const PET_ROOM_SPEED = 24; // px/秒
-// 貓咪的 sprite 一直是貼齊房間底部（floor level）在動，沙發本身有腳墊高、
-// 座墊在更上面，貓咪走到沙發前面只會像「站在沙發前的地板上」，不會疊到
-// 沙發座墊——所以其實整個地板寬度都能走，只在最右邊留一點點緩衝避免貼死牆角。
-const PET_ROOM_SAFE_RIGHT_FRACTION = 0.97;
+// 走動範圍要避開兩塊「貼地障礙物」：左邊聖誕樹盆栽+壁爐石座（這兩個物件底部
+// 直接連著地板、沒有懸空的縫隙，貓咪走進去會像疊在盆栽/壁爐上面），還有最
+// 右邊書櫃後面的牆角死角。沙發不算——沙發有腳墊高、下面看得到地板，貓咪走到
+// 沙發前面只是「站在沙發前的地板上」，不會疊到座墊，所以中間這段都能走。
+const PET_ROOM_SAFE_LEFT_FRACTION = 0.23;
+const PET_ROOM_SAFE_RIGHT_FRACTION = 0.86;
 let petRoomTimer = null;
 let petRoomBlinkTimer = null;
 let petRoomFacing = 1;
@@ -2295,6 +2297,7 @@ function petRoomTick() {
   if (oldFx) oldFx.remove();
   els.sprite.classList.remove('pet-room-walking');
   els.staticImg.style.transform = '';
+  els.staticImg.src = CAT_PORTRAIT_NEUTRAL;
 
   const roll = Math.random();
   let state, duration;
@@ -2309,9 +2312,9 @@ function petRoomTick() {
     const roomWidth = els.room.clientWidth;
     const spriteWidth = els.wrap.offsetWidth || 56;
     const curLeftPx = els.wrap.offsetLeft;
-    const safeRightPx = roomWidth * PET_ROOM_SAFE_RIGHT_FRACTION;
-    const maxLeftPx = Math.max(0, Math.min(roomWidth - spriteWidth, safeRightPx - spriteWidth));
-    const targetLeftPx = Math.random() * maxLeftPx;
+    const minLeftPx = roomWidth * PET_ROOM_SAFE_LEFT_FRACTION;
+    const maxLeftPx = Math.max(minLeftPx, Math.min(roomWidth - spriteWidth, roomWidth * PET_ROOM_SAFE_RIGHT_FRACTION - spriteWidth));
+    const targetLeftPx = minLeftPx + Math.random() * (maxLeftPx - minLeftPx);
     const distance = Math.abs(targetLeftPx - curLeftPx);
     duration = Math.max(1.5, distance / PET_ROOM_SPEED);
     // cat_walk_a/b.png 預設畫的是朝左走的姿勢，所以往右走時才要翻面，
@@ -2341,6 +2344,7 @@ function petRoomTick() {
     freezePetRoomPosition(els);
     els.walkFrames.style.display = 'none';
     els.staticImg.style.display = 'block';
+    els.staticImg.src = CAT_PORTRAIT_GROOM;
     const fx = document.createElement('div');
     fx.className = 'pet-room-groom-fx';
     fx.textContent = '💦';
@@ -2351,7 +2355,7 @@ function petRoomTick() {
     freezePetRoomPosition(els);
     els.walkFrames.style.display = 'none';
     els.staticImg.style.display = 'block';
-    els.staticImg.style.transform = 'rotate(90deg)';
+    els.staticImg.src = CAT_PORTRAIT_SLEEP;
     const zzz = document.createElement('div');
     zzz.className = 'pet-room-zzz';
     zzz.textContent = '💤';
@@ -2450,6 +2454,8 @@ const CAT_PORTRAIT_NEUTRAL = 'img/pet/cat_portrait.png';
 const CAT_PORTRAIT_EATING  = 'img/pet/cat_eating.png';
 const CAT_PORTRAIT_BATH    = 'img/pet/cat_bath.png';
 const CAT_PORTRAIT_HAPPY   = 'img/pet/cat_happy.png';
+const CAT_PORTRAIT_GROOM   = 'img/pet/cat_groom.png';
+const CAT_PORTRAIT_SLEEP   = 'img/pet/cat_sleep.png';
 
 function setPetPortraitImage(src) {
   const portrait = document.getElementById('pet-portrait');
