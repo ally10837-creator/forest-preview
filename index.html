@@ -170,42 +170,12 @@ body {
 .pet-adopt-btn:active, .pet-decline-btn:active { transform: translate(2px,2px); box-shadow: none; }
 
 /* ── PET (動物夥伴) ── */
-/* ── 森林小屋房間：貓咪自由走動/坐/趴睡/理毛的生活場景，純 CSS 畫背景 ── */
+/* ── 森林小屋房間：貓咪自由走動/坐/趴睡/理毛的生活場景 ── */
 .pet-room-outer { margin: 0 14px 10px; }
 .pet-room {
   position: relative; height: 190px; overflow: hidden; border: var(--border); border-radius: var(--radius);
-  background: linear-gradient(180deg, #6b4a35 0%, #6b4a35 60%, #8a6a4a 60%, #8a6a4a 100%);
+  background-image: url('img/pet/cabin_bg.png'); background-size: cover; background-position: center;
   box-shadow: var(--shadow-sm);
-}
-.pet-room-window {
-  position: absolute; top: 14px; left: 16px; width: 78px; height: 56px; border-radius: 8px;
-  background: linear-gradient(180deg,#bfe6ff,#8fd6a0); border: 4px solid #4a3222;
-  box-shadow: inset 0 0 0 2px rgba(255,255,255,0.35);
-}
-.pet-room-window::before, .pet-room-window::after {
-  content: ''; position: absolute; bottom: 6px; border-radius: 50% 50% 45% 45%; background: #4fa860;
-}
-.pet-room-window::before { left: 6px; width: 16px; height: 14px; }
-.pet-room-window::after  { right: 6px; width: 12px; height: 10px; }
-.pet-room-lamp { position: absolute; top: 0; right: 24%; width: 4px; height: 20px; background: #4a3222; }
-.pet-room-lamp::after {
-  content: ''; position: absolute; top: 18px; left: 50%; width: 40px; height: 26px; transform: translateX(-50%);
-  background: radial-gradient(ellipse at 50% 0%, rgba(255,224,150,0.9), rgba(255,224,150,0));
-}
-.pet-room-rug {
-  position: absolute; left: 50%; bottom: 14px; width: 130px; height: 42px; transform: translateX(-50%);
-  background: #d97a5f; border-radius: 50%; opacity: 0.5;
-}
-.pet-room-plant {
-  position: absolute; right: 10px; bottom: 14px; width: 20px; height: 30px;
-}
-.pet-room-plant::before {
-  content: ''; position: absolute; bottom: 0; left: 2px; width: 16px; height: 12px;
-  background: #8a5a3b; border-radius: 3px;
-}
-.pet-room-plant::after {
-  content: ''; position: absolute; bottom: 10px; left: 0; width: 20px; height: 22px;
-  background: #4fa860; border-radius: 50% 50% 40% 40%;
 }
 .pet-room-wrap {
   position: absolute; bottom: 20px; left: 40%; width: 56px; height: 56px; cursor: pointer; z-index: 2;
@@ -2217,10 +2187,6 @@ function renderForestPet(data) {
     el.innerHTML = `
       <div class="pet-room-outer">
         <div class="pet-room" id="pet-room">
-          <div class="pet-room-window"></div>
-          <div class="pet-room-plant"></div>
-          <div class="pet-room-lamp"></div>
-          <div class="pet-room-rug"></div>
           <div class="pet-room-wrap" id="pet-room-wrap" onclick="openPetZoom()">
             <div class="pet-room-flip" id="pet-room-flip">
               <div class="pet-room-sprite" id="pet-room-sprite">
