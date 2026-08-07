@@ -180,7 +180,13 @@ body {
 .pet-room-wrap {
   position: absolute; bottom: 20px; left: 40%; width: 56px; height: 56px; cursor: pointer; z-index: 2;
 }
-.pet-room-flip { width: 100%; height: 100%; }
+/* 貓咪腳下的接地影子——沒有它貓咪看起來會像貼在背景上面，浮浮的 */
+.pet-room-wrap::after {
+  content: ''; position: absolute; z-index: 0; left: 50%; bottom: 2px;
+  width: 34px; height: 9px; margin-left: -17px; border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(30,20,10,0.32) 0%, rgba(30,20,10,0) 75%);
+}
+.pet-room-flip { position: relative; z-index: 1; width: 100%; height: 100%; }
 .pet-room-sprite { position: relative; width: 100%; height: 100%; }
 .pet-room-sprite.pet-room-walking { animation: petWalkBob 0.45s ease-in-out infinite; }
 .pet-room-static.pet-room-blink { animation: petRoomBlinkAnim 0.18s ease; }
@@ -2294,7 +2300,9 @@ function petRoomTick() {
     const targetLeftPx = Math.random() * maxLeftPx;
     const distance = Math.abs(targetLeftPx - curLeftPx);
     duration = Math.max(1.5, distance / PET_ROOM_SPEED);
-    petRoomFacing = targetLeftPx >= curLeftPx ? 1 : -1;
+    // cat_walk_a/b.png 預設畫的是朝左走的姿勢，所以往右走時才要翻面，
+    // 往左走時維持原圖不翻——之前寫反了，導致貓咪一直「背對」前進方向（像在倒退走）。
+    petRoomFacing = targetLeftPx >= curLeftPx ? -1 : 1;
     els.flip.style.transform = `scaleX(${petRoomFacing})`;
     els.wrap.style.transition = `left ${duration}s linear`;
     els.wrap.style.left = targetLeftPx + 'px';
