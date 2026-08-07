@@ -2240,12 +2240,12 @@ function renderForestPet(data) {
 // petRoomTick() 裡把 staticImg.src 換成新圖就好，邏輯不用重寫。
 // ══════════════════════════════════════════════
 const PET_ROOM_SPEED = 24; // px/秒
-// 走動範圍要避開兩塊「貼地障礙物」：左邊聖誕樹盆栽+壁爐石座（這兩個物件底部
-// 直接連著地板、沒有懸空的縫隙，貓咪走進去會像疊在盆栽/壁爐上面），還有最
-// 右邊書櫃後面的牆角死角。沙發不算——沙發有腳墊高、下面看得到地板，貓咪走到
-// 沙發前面只是「站在沙發前的地板上」，不會疊到座墊，所以中間這段都能走。
+// 實測發現沙發其實沒有足夠的地板縫隙——理毛/睡覺這幾個姿勢圖比走路幀更高/更
+// 圓，貓咪站在沙發正前方時還是會整個疊到座墊上面。所以走動範圍縮小到壁爐跟
+// 沙發中間這段乾淨地板，兩側（左邊聖誕樹+壁爐石座、右邊沙發+書櫃牆角）都是
+// 貼地障礙物，直接避開。
 const PET_ROOM_SAFE_LEFT_FRACTION = 0.23;
-const PET_ROOM_SAFE_RIGHT_FRACTION = 0.86;
+const PET_ROOM_SAFE_RIGHT_FRACTION = 0.46;
 let petRoomTimer = null;
 let petRoomBlinkTimer = null;
 let petRoomFacing = 1;
@@ -2454,8 +2454,8 @@ const CAT_PORTRAIT_NEUTRAL = 'img/pet/cat_portrait.png';
 const CAT_PORTRAIT_EATING  = 'img/pet/cat_eating.png';
 const CAT_PORTRAIT_BATH    = 'img/pet/cat_bath.png';
 const CAT_PORTRAIT_HAPPY   = 'img/pet/cat_happy.png';
-const CAT_PORTRAIT_GROOM   = 'img/pet/cat_groom.png';
-const CAT_PORTRAIT_SLEEP   = 'img/pet/cat_sleep.png';
+const CAT_PORTRAIT_GROOM   = 'img/pet/cat_groom_v2.png';
+const CAT_PORTRAIT_SLEEP   = 'img/pet/cat_sleep_v2.png';
 
 function setPetPortraitImage(src) {
   const portrait = document.getElementById('pet-portrait');
