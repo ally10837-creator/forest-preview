@@ -158,13 +158,26 @@ body {
   box-shadow: var(--shadow-sm); overflow: hidden;
 }
 .pet-roam {
-  position: relative; height: 84px; overflow: hidden; border-bottom: var(--border);
-  background: linear-gradient(180deg,#eaf7ea,#dff3df);
+  position: relative; height: 96px; overflow: hidden; border-bottom: var(--border);
+  background: linear-gradient(180deg, #bfe6ff 0%, #bfe6ff 34%, #8fd6a0 34%, #63c07f 100%);
 }
-.pet-walk-wrap { position: absolute; bottom: 6px; width: 60px; height: 60px; animation: petWalk 10s linear infinite; }
+/* 森林餐廳背景：純 CSS 畫的樹叢＋草地＋小招牌，不用額外的圖片素材 */
+.pet-roam-tree {
+  position: absolute; bottom: 12px; border-radius: 50% 50% 45% 45%;
+  background: #4fa860; box-shadow: inset -5px -5px 0 rgba(0,0,0,0.08);
+}
+.pet-roam-tree::after {
+  content: ''; position: absolute; left: 50%; top: 100%; width: 6px; height: 10px;
+  background: #8a5a3b; transform: translateX(-50%);
+}
+.pet-roam-tree.t1 { left: 4%;  width: 40px; height: 34px; }
+.pet-roam-tree.t2 { left: 16%; width: 26px; height: 22px; }
+.pet-roam-tree.t3 { right: 5%; width: 36px; height: 30px; }
+.pet-roam-sign {
+  position: absolute; right: 18%; bottom: 14px; font-size: 20px; filter: drop-shadow(0 1px 0 rgba(0,0,0,0.15));
+}
+.pet-walk-wrap { position: absolute; bottom: 6px; width: 60px; height: 60px; animation: petWalk 10s linear infinite; z-index: 2; }
 .pet-walk-sprite { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-.pet-walk-sprite.frame-a { animation: petFrameA 0.6s steps(1) infinite; }
-.pet-walk-sprite.frame-b { animation: petFrameB 0.6s steps(1) infinite; }
 @keyframes petWalk {
   0%   { left: 0;                    transform: scaleX(1); }
   48%  { left: calc(100% - 60px);    transform: scaleX(1); }
@@ -172,8 +185,6 @@ body {
   98%  { left: 0;                    transform: scaleX(-1); }
   100% { left: 0;                    transform: scaleX(1); }
 }
-@keyframes petFrameA { 0%,49% { opacity:1; } 50%,100% { opacity:0; } }
-@keyframes petFrameB { 0%,49% { opacity:0; } 50%,100% { opacity:1; } }
 .pet-stage { position: relative; padding: 18px 0 8px; text-align: center; cursor: pointer; }
 .pet-portrait { width: 100%; max-width: 200px; display: block; margin: 0 auto; }
 .pet-portrait.bounce { animation: petBounce 0.4s ease; }
@@ -2061,9 +2072,12 @@ function renderForestPet(data) {
     el.innerHTML = `
       <div class="pet-card">
         <div class="pet-roam">
+          <div class="pet-roam-tree t1"></div>
+          <div class="pet-roam-tree t2"></div>
+          <div class="pet-roam-tree t3"></div>
+          <div class="pet-roam-sign">🍽️</div>
           <div class="pet-walk-wrap">
-            <img class="pet-walk-sprite frame-a" src="img/pet/cat_walk_a.png" alt="">
-            <img class="pet-walk-sprite frame-b" src="img/pet/cat_walk_b.png" alt="">
+            <img class="pet-walk-sprite" src="img/pet/cat_walk_a.png" alt="貓咪散步中">
           </div>
         </div>
         <div class="pet-stage" id="pet-stage" onclick="petTouch()">
