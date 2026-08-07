@@ -2427,6 +2427,7 @@ function spawnPetHearts() {
 const CAT_PORTRAIT_NEUTRAL = 'img/pet/cat_portrait.png';
 const CAT_PORTRAIT_EATING  = 'img/pet/cat_eating.png';
 const CAT_PORTRAIT_BATH    = 'img/pet/cat_bath.png';
+const CAT_PORTRAIT_HAPPY   = 'img/pet/cat_happy.png';
 
 function setPetPortraitImage(src) {
   const portrait = document.getElementById('pet-portrait');
@@ -2508,6 +2509,8 @@ function petTouch() {
   document.getElementById('pet-hint').textContent = gained > 0
     ? '貓咪瞇著眼睛，好像很喜歡被摸摸～'
     : '貓咪今天已經被照顧很多囉，明天繼續累積成長點數吧！';
+  setPetPortraitImage(CAT_PORTRAIT_HAPPY);
+  setTimeout(() => setPetPortraitImage(CAT_PORTRAIT_NEUTRAL), 1200);
   petBouncePortrait();
   spawnPetHearts();
   updatePetStatsUI();
