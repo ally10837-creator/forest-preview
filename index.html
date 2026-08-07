@@ -2240,9 +2240,10 @@ function renderForestPet(data) {
 // petRoomTick() 裡把 staticImg.src 換成新圖就好，邏輯不用重寫。
 // ══════════════════════════════════════════════
 const PET_ROOM_SPEED = 24; // px/秒
-// 房間背景圖裡沙發大概從房間寬度的 48% 開始，貓咪走動範圍要留在這條線以左，
-// 才不會看起來像走進/疊在沙發上面。
-const PET_ROOM_SAFE_RIGHT_FRACTION = 0.47;
+// 貓咪的 sprite 一直是貼齊房間底部（floor level）在動，沙發本身有腳墊高、
+// 座墊在更上面，貓咪走到沙發前面只會像「站在沙發前的地板上」，不會疊到
+// 沙發座墊——所以其實整個地板寬度都能走，只在最右邊留一點點緩衝避免貼死牆角。
+const PET_ROOM_SAFE_RIGHT_FRACTION = 0.97;
 let petRoomTimer = null;
 let petRoomBlinkTimer = null;
 let petRoomFacing = 1;
