@@ -176,14 +176,28 @@ body {
 .pet-roam-sign {
   position: absolute; right: 18%; bottom: 14px; font-size: 20px; filter: drop-shadow(0 1px 0 rgba(0,0,0,0.15));
 }
-.pet-walk-wrap { position: absolute; bottom: 6px; width: 60px; height: 60px; animation: petWalk 10s linear infinite; z-index: 2; }
-.pet-walk-sprite { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-@keyframes petWalk {
-  0%   { left: 0;                    transform: scaleX(1); }
-  48%  { left: calc(100% - 60px);    transform: scaleX(1); }
-  50%  { left: calc(100% - 60px);    transform: scaleX(-1); }
-  98%  { left: 0;                    transform: scaleX(-1); }
-  100% { left: 0;                    transform: scaleX(1); }
+/* 三層結構讓「左右移動」「轉身翻面」「走路彈跳」三個 transform 動畫互不覆蓋：
+   外層只管位置(left)，中層只管翻面(scaleX)，內層的圖片只管走路彈跳(translateY/rotate)。 */
+.pet-walk-wrap { position: absolute; bottom: 6px; width: 60px; height: 60px; animation: petWalkPos 10s linear infinite; z-index: 2; }
+.pet-walk-flip { width: 100%; height: 100%; animation: petWalkFlip 10s linear infinite; }
+.pet-walk-sprite { display: block; width: 100%; height: 100%; object-fit: contain; animation: petWalkBob 0.45s ease-in-out infinite; }
+@keyframes petWalkPos {
+  0%   { left: 0; }
+  48%  { left: calc(100% - 60px); }
+  50%  { left: calc(100% - 60px); }
+  98%  { left: 0; }
+  100% { left: 0; }
+}
+@keyframes petWalkFlip {
+  0%,49%  { transform: scaleX(1); }
+  50%,99% { transform: scaleX(-1); }
+  100%    { transform: scaleX(1); }
+}
+@keyframes petWalkBob {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25%      { transform: translateY(-3px) rotate(-3deg); }
+  50%      { transform: translateY(0) rotate(0deg); }
+  75%      { transform: translateY(-3px) rotate(3deg); }
 }
 .pet-stage { position: relative; padding: 18px 0 8px; text-align: center; cursor: pointer; }
 .pet-portrait { width: 100%; max-width: 200px; display: block; margin: 0 auto; }
@@ -192,6 +206,23 @@ body {
   0%,100% { transform: scale(1) rotate(0); }
   30%     { transform: scale(1.12) rotate(-4deg); }
   60%     { transform: scale(0.96) rotate(3deg); }
+}
+.pet-portrait.chew { animation: petChew 0.9s ease; }
+@keyframes petChew {
+  0%,100% { transform: scaleY(1) scaleX(1); }
+  20%     { transform: scaleY(0.86) scaleX(1.08); }
+  40%     { transform: scaleY(1) scaleX(1); }
+  60%     { transform: scaleY(0.86) scaleX(1.08); }
+  80%     { transform: scaleY(1) scaleX(1); }
+}
+.pet-yum {
+  position: absolute; left: 50%; top: 28%; font-size: 32px; pointer-events: none;
+  animation: petYumPop 1s ease-out forwards;
+}
+@keyframes petYumPop {
+  0%   { transform: translate(-50%, 0) scale(0.5) rotate(-8deg); opacity: 0; }
+  30%  { transform: translate(-50%, -14px) scale(1.15) rotate(5deg); opacity: 1; }
+  100% { transform: translate(-50%, -46px) scale(1) rotate(0deg); opacity: 0; }
 }
 .pet-heart {
   position: absolute; top: 40%; font-size: 22px; pointer-events: none;
@@ -2077,7 +2108,9 @@ function renderForestPet(data) {
           <div class="pet-roam-tree t3"></div>
           <div class="pet-roam-sign">🍽️</div>
           <div class="pet-walk-wrap">
-            <img class="pet-walk-sprite" src="img/pet/cat_walk_a.png" alt="貓咪散步中">
+            <div class="pet-walk-flip">
+              <img class="pet-walk-sprite" src="img/pet/cat_walk_a.png" alt="貓咪散步中">
+            </div>
           </div>
         </div>
         <div class="pet-stage" id="pet-stage" onclick="petTouch()">
@@ -2154,6 +2187,22 @@ function spawnPetHearts() {
   }
 }
 
+function petChewPortrait() {
+  const portrait = document.getElementById('pet-portrait');
+  portrait.classList.remove('chew');
+  void portrait.offsetWidth; // 強制 reflow，讓同一個 animation class 可以重新觸發
+  portrait.classList.add('chew');
+}
+
+function spawnPetYum() {
+  const stage = document.getElementById('pet-stage');
+  const y = document.createElement('div');
+  y.className = 'pet-yum';
+  y.textContent = '😋';
+  stage.appendChild(y);
+  setTimeout(() => y.remove(), 1000);
+}
+
 function playPetFeedAnimation(emoji) {
   const stage = document.getElementById('pet-stage');
   const f = document.createElement('div');
@@ -2161,7 +2210,7 @@ function playPetFeedAnimation(emoji) {
   f.textContent = emoji;
   stage.appendChild(f);
   setTimeout(() => f.remove(), 700);
-  setTimeout(() => petBouncePortrait(), 550);
+  setTimeout(() => { petChewPortrait(); spawnPetYum(); }, 550);
 }
 
 function petTouch() {
