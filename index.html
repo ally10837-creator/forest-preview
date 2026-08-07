@@ -130,6 +130,95 @@ body {
 .order-btn:active { transform:translate(2px,2px); box-shadow:none; }
 .order-btn:disabled { background:#ddd; color:#999; cursor:not-allowed; box-shadow:none; border-color:#ccc; }
 
+/* ── PET (動物夥伴) — 領養邂逅畫面 ── */
+.pet-encounter {
+  margin: 24px 16px; background: white; border: var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 22px 18px; text-align: center;
+}
+.pet-encounter-portrait { width: 140px; margin: 0 auto 14px; animation: petShy 2.4s ease-in-out infinite; }
+.pet-encounter-portrait img { width: 100%; display: block; filter: saturate(0.7) brightness(0.98); }
+@keyframes petShy {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  50%      { transform: translateY(-6px) rotate(-2deg); }
+}
+.pet-encounter-text { font-size: 14px; color: var(--cocoa); line-height: 1.7; margin-bottom: 18px; }
+.pet-encounter-actions { display: flex; gap: 10px; justify-content: center; }
+.pet-adopt-btn, .pet-decline-btn {
+  border: 2px solid var(--cocoa); border-radius: 12px; padding: 10px 18px;
+  font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+  box-shadow: var(--shadow-sm); transition: all 0.1s;
+}
+.pet-adopt-btn { background: var(--rose); color: white; }
+.pet-decline-btn { background: white; color: var(--cocoa-soft); }
+.pet-adopt-btn:active, .pet-decline-btn:active { transform: translate(2px,2px); box-shadow: none; }
+
+/* ── PET (動物夥伴) ── */
+.pet-card {
+  margin: 0 14px 16px; background: white; border: var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow-sm); overflow: hidden;
+}
+.pet-roam {
+  position: relative; height: 84px; overflow: hidden; border-bottom: var(--border);
+  background: linear-gradient(180deg,#eaf7ea,#dff3df);
+}
+.pet-walk-wrap { position: absolute; bottom: 6px; width: 60px; height: 60px; animation: petWalk 10s linear infinite; }
+.pet-walk-sprite { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.pet-walk-sprite.frame-a { animation: petFrameA 0.6s steps(1) infinite; }
+.pet-walk-sprite.frame-b { animation: petFrameB 0.6s steps(1) infinite; }
+@keyframes petWalk {
+  0%   { left: 0;                    transform: scaleX(1); }
+  48%  { left: calc(100% - 60px);    transform: scaleX(1); }
+  50%  { left: calc(100% - 60px);    transform: scaleX(-1); }
+  98%  { left: 0;                    transform: scaleX(-1); }
+  100% { left: 0;                    transform: scaleX(1); }
+}
+@keyframes petFrameA { 0%,49% { opacity:1; } 50%,100% { opacity:0; } }
+@keyframes petFrameB { 0%,49% { opacity:0; } 50%,100% { opacity:1; } }
+.pet-stage { position: relative; padding: 18px 0 8px; text-align: center; cursor: pointer; }
+.pet-portrait { width: 100%; max-width: 200px; display: block; margin: 0 auto; }
+.pet-portrait.bounce { animation: petBounce 0.4s ease; }
+@keyframes petBounce {
+  0%,100% { transform: scale(1) rotate(0); }
+  30%     { transform: scale(1.12) rotate(-4deg); }
+  60%     { transform: scale(0.96) rotate(3deg); }
+}
+.pet-heart {
+  position: absolute; top: 40%; font-size: 22px; pointer-events: none;
+  animation: heartPop 0.9s ease-out forwards;
+}
+@keyframes heartPop {
+  0%   { transform: translate(-50%, 0) scale(0.6); opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--dx, 0px)), -70px) scale(1.2); opacity: 0; }
+}
+.pet-food-fly { position: absolute; left: 10%; top: 70%; font-size: 26px; pointer-events: none; animation: foodFly 0.7s ease-in forwards; }
+@keyframes foodFly {
+  0%   { left: 10%; top: 70%; opacity: 1; transform: scale(1); }
+  100% { left: 48%; top: 32%; opacity: 0; transform: scale(0.6); }
+}
+.pet-hint { font-size: 12px; color: var(--cocoa-soft); text-align: center; padding: 0 16px 4px; min-height: 16px; }
+.pet-exp-bar-wrap { padding: 4px 16px 14px; }
+.pet-exp-bar { background: #f0ead8; border: 2px solid var(--cocoa); border-radius: 50px; height: 14px; overflow: hidden; }
+.pet-exp-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--mint), #7fe0bb); transition: width 0.4s ease; }
+.pet-exp-label { font-size: 11px; color: var(--cocoa-soft); margin-top: 4px; text-align: center; font-weight: 700; }
+
+/* ── PET FOOD GRID ── */
+.pet-food-grid { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 90px; }
+.pet-food-card {
+  background: white; border: var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+}
+.pet-food-emoji { font-size: 28px; width: 40px; text-align: center; flex-shrink: 0; }
+.pet-food-body { flex: 1; min-width: 0; }
+.pet-food-name { font-size: 14px; font-weight: 700; color: var(--cocoa); }
+.pet-food-desc { font-size: 11px; color: var(--cocoa-soft); margin-top: 2px; }
+.pet-feed-btn {
+  background: var(--mint); color: white; border: 2px solid var(--cocoa); border-radius: 10px;
+  padding: 6px 14px; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+  box-shadow: var(--shadow-sm); transition: all 0.1s; flex-shrink: 0;
+}
+.pet-feed-btn:active { transform: translate(2px,2px); box-shadow: none; }
+.pet-feed-btn:disabled { background: #ddd; color: #999; cursor: not-allowed; box-shadow: none; border-color: #ccc; }
+
 /* ── CHORE LIST ── */
 .chore-list { display:flex; flex-direction:column; gap:10px; padding: 0 12px 80px; }
 .chore-card {
@@ -1014,7 +1103,9 @@ body.audio-settings-open { overflow: hidden; }
     </div>
   </div>
 
-  <!-- SUB TAB: FOREST PET（森林夥伴，Phase 1：唯讀空狀態畫面，還沒有餵食/購買/果實功能） -->
+  <!-- SUB TAB: FOREST PET（森林夥伴，Phase 2：撿到小動物→領養→摸摸/餵食/走動的前端 MVP。
+       資料先存 localStorage；欄位命名對齊 Google Sheet 既有的 Pets/PetFoodCatalog 分頁，
+       之後接上真後端（data.pet）時可以直接沿用同一套欄位，不用重新設計資料結構。 -->
   <div id="sub-forestpet" class="sub-panel">
     <div class="section-title">🐾 森林夥伴</div>
     <div id="forestpet-content">
@@ -1882,24 +1973,211 @@ function renderSubTab(tab, options = {}) {
   if (tab === 'forestpet') renderForestPet(data);
 }
 
-// ── RENDER FOREST PET（森林夥伴，Phase 1：唯讀空狀態，不含餵食/購買/果實邏輯）──
+// ══════════════════════════════════════════════
+// RENDER FOREST PET（森林夥伴，Phase 2：撿到小動物 → 領養 → 摸摸/餵食/走動）
+// 狀態先存 localStorage；欄位命名對齊 Google Sheet 既有的 Pets/PetFoodCatalog 分頁，
+// 之後接上真後端（改讀 data.pet）時可以直接沿用同一套欄位，不用重新設計資料結構。
+// ══════════════════════════════════════════════
+const PET_FOOD_CATALOG = [
+  { food_id: 'fish_treat', food_name: '魚乾',   emoji: '🐟', exp: 10, desc: '貓咪最愛的點心' },
+  { food_id: 'milk',       food_name: '牛奶',   emoji: '🥛', exp: 6,  desc: '補充一點元氣' },
+  { food_id: 'chicken',    food_name: '雞肉條', emoji: '🍗', exp: 14, desc: '豐盛的一餐' },
+];
+const PET_DAILY_FEED_LIMIT = 3;
+const PET_STAGES = [
+  { stage: 'baby',  min: 0,   label: '幼貓',  emoji: '🐣' },
+  { stage: 'young', min: 100, label: '少年貓', emoji: '🐱' },
+  { stage: 'adult', min: 300, label: '成貓',   emoji: '😺' },
+];
+
+function petStorageKey(childId)  { return 'forest_pet_state_' + childId; }
+function petAdoptedKey(childId)  { return 'forest_pet_adopted_' + childId; }
+
+function isPetAdopted(childId) {
+  return localStorage.getItem(petAdoptedKey(childId)) === 'true';
+}
+
+function getPetState(childId) {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(petStorageKey(childId))); } catch (e) { s = null; }
+  const today = getTaipeiTodayStr();
+  if (!s) {
+    s = {
+      pet_id: 'pet_' + childId, child_id: childId, species: 'cat', pet_name: '貓咪',
+      stage: 'baby', exp_points: 0, today_feed_count: 0, last_feed_date_taipei: today,
+      last_touch_at: null, created_at: Date.now(), updated_at: Date.now()
+    };
+  }
+  if (s.last_feed_date_taipei !== today) {
+    s.today_feed_count = 0;
+    s.last_feed_date_taipei = today;
+  }
+  return s;
+}
+
+function savePetState(childId, s) {
+  s.updated_at = Date.now();
+  localStorage.setItem(petStorageKey(childId), JSON.stringify(s));
+}
+
+function petStageInfoForExp(exp) {
+  let cur = PET_STAGES[0];
+  for (const st of PET_STAGES) if (exp >= st.min) cur = st;
+  return cur;
+}
+
+function adoptPet() {
+  const childId = currentChild;
+  localStorage.setItem(petAdoptedKey(childId), 'true');
+  savePetState(childId, getPetState(childId)); // 建立初始寵物資料
+  showToast('🎉 恭喜你領養了一隻小貓！', 'success');
+  renderForestPet(allData[currentChild]);
+}
+
+function declinePet() {
+  showToast('牠還在附近徘徊，隨時歡迎你回來領養牠 🐾', 'warn');
+}
+
 function renderForestPet(data) {
   const el = document.getElementById('forestpet-content');
   if (!el) return;
-  const pet = data.pet;
-  if (!pet) {
+  const childId = currentChild;
+
+  if (!isPetAdopted(childId)) {
     el.innerHTML = `
-      <div class="empty" style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:30px 16px;">
-        <div style="font-size:48px;">🐾</div>
-        <div style="font-size:15px;font-weight:700;color:var(--cocoa-soft);">還沒有森林夥伴喔</div>
+      <div class="pet-encounter">
+        <div class="pet-encounter-portrait"><img src="img/pet/cat_portrait.png" alt="一隻迷路的小貓"></div>
+        <div class="pet-encounter-text">你在森林餐廳後院發現了一隻迷路的小貓，牠怯生生地看著你……<br>要收留牠嗎？</div>
+        <div class="pet-encounter-actions">
+          <button class="pet-adopt-btn" onclick="adoptPet()">💕 領養牠</button>
+          <button class="pet-decline-btn" onclick="declinePet()">先不要</button>
+        </div>
       </div>`;
     return;
   }
-  el.innerHTML = `
-    <div style="padding:16px;">
-      <div style="font-size:16px;font-weight:800;">${pet.pet_name || pet.species}</div>
-      <div style="font-size:13px;color:var(--cocoa-soft);">第 ${pet.stage} 階段</div>
-    </div>`;
+
+  // 已領養：主畫面只在還沒建立過時才整個重畫，避免每次摸摸/餵食都讓走路動畫重新從頭播放
+  if (!document.getElementById('pet-stage')) {
+    el.innerHTML = `
+      <div class="pet-card">
+        <div class="pet-roam">
+          <div class="pet-walk-wrap">
+            <img class="pet-walk-sprite frame-a" src="img/pet/cat_walk_a.png" alt="">
+            <img class="pet-walk-sprite frame-b" src="img/pet/cat_walk_b.png" alt="">
+          </div>
+        </div>
+        <div class="pet-stage" id="pet-stage" onclick="petTouch()">
+          <img class="pet-portrait" id="pet-portrait" src="img/pet/cat_portrait.png" alt="貓咪">
+        </div>
+        <div class="pet-hint" id="pet-hint">摸摸貓咪，或餵牠吃點心吧！</div>
+        <div class="pet-exp-bar-wrap">
+          <div class="pet-exp-bar"><div class="pet-exp-fill" id="pet-exp-fill"></div></div>
+          <div class="pet-exp-label" id="pet-exp-label">經驗值 0</div>
+        </div>
+      </div>
+      <div class="section-title" style="padding-top:0;">🍖 今日點心 <span class="pill" id="pet-feed-count">0/3</span></div>
+      <div class="pet-food-grid" id="pet-food-grid"></div>`;
+  }
+  updatePetStatsUI();
+}
+
+function updatePetStatsUI() {
+  const childId = currentChild;
+  const s = getPetState(childId);
+  const stageInfo = petStageInfoForExp(s.exp_points);
+  s.stage = stageInfo.stage;
+  savePetState(childId, s);
+
+  const idx = PET_STAGES.indexOf(stageInfo);
+  const nextStage = PET_STAGES[idx + 1];
+  const floor = stageInfo.min;
+  const ceil = nextStage ? nextStage.min : floor + 100;
+  const pct = nextStage ? Math.min(100, Math.round((s.exp_points - floor) / (ceil - floor) * 100)) : 100;
+  document.getElementById('pet-exp-fill').style.width = pct + '%';
+  document.getElementById('pet-exp-label').textContent = nextStage
+    ? `經驗值 ${s.exp_points}／下一階段還差 ${ceil - s.exp_points}`
+    : `經驗值 ${s.exp_points}（已達最高階段）`;
+
+  document.getElementById('pet-feed-count').textContent = s.today_feed_count + '/' + PET_DAILY_FEED_LIMIT;
+
+  renderPetFood(s);
+}
+
+function renderPetFood(s) {
+  const grid = document.getElementById('pet-food-grid');
+  const remaining = PET_DAILY_FEED_LIMIT - s.today_feed_count;
+  grid.innerHTML = PET_FOOD_CATALOG.map(f => `
+    <div class="pet-food-card">
+      <div class="pet-food-emoji">${f.emoji}</div>
+      <div class="pet-food-body">
+        <div class="pet-food-name">${f.food_name}</div>
+        <div class="pet-food-desc">${f.desc}（+${f.exp} 經驗值）</div>
+      </div>
+      <button class="pet-feed-btn" ${remaining <= 0 ? 'disabled' : ''} onclick="petFeed('${f.food_id}')">
+        ${remaining <= 0 ? '今日已吃飽' : '餵食'}
+      </button>
+    </div>
+  `).join('');
+}
+
+function petBouncePortrait() {
+  const portrait = document.getElementById('pet-portrait');
+  portrait.classList.remove('bounce');
+  void portrait.offsetWidth; // 強制 reflow，讓同一個 animation class 可以重新觸發
+  portrait.classList.add('bounce');
+}
+
+function spawnPetHearts() {
+  const stage = document.getElementById('pet-stage');
+  for (let i = 0; i < 3; i++) {
+    const h = document.createElement('div');
+    h.className = 'pet-heart';
+    h.textContent = '💕';
+    h.style.setProperty('--dx', (Math.random() * 40 - 20) + 'px');
+    h.style.left = (46 + Math.random() * 8) + '%';
+    stage.appendChild(h);
+    setTimeout(() => h.remove(), 900);
+  }
+}
+
+function playPetFeedAnimation(emoji) {
+  const stage = document.getElementById('pet-stage');
+  const f = document.createElement('div');
+  f.className = 'pet-food-fly';
+  f.textContent = emoji;
+  stage.appendChild(f);
+  setTimeout(() => f.remove(), 700);
+  setTimeout(() => petBouncePortrait(), 550);
+}
+
+function petTouch() {
+  const childId = currentChild;
+  const s = getPetState(childId);
+  s.exp_points += 2;
+  s.last_touch_at = Date.now();
+  savePetState(childId, s);
+  document.getElementById('pet-hint').textContent = '貓咪瞇著眼睛，好像很喜歡被摸摸～';
+  petBouncePortrait();
+  spawnPetHearts();
+  updatePetStatsUI();
+}
+
+function petFeed(foodId) {
+  const childId = currentChild;
+  const s = getPetState(childId);
+  if (s.today_feed_count >= PET_DAILY_FEED_LIMIT) {
+    showToast('🐱 貓咪今天已經吃飽囉，明天再來吧！', 'error');
+    return;
+  }
+  const food = PET_FOOD_CATALOG.find(f => f.food_id === foodId);
+  if (!food) return;
+  s.exp_points += food.exp;
+  s.today_feed_count += 1;
+  s.last_touch_at = Date.now();
+  savePetState(childId, s);
+  document.getElementById('pet-hint').textContent = `貓咪開心地吃掉了${food.food_name}！`;
+  playPetFeedAnimation(food.emoji);
+  updatePetStatsUI();
 }
 
 // 孩子端：手動立即更新按鈕
