@@ -142,8 +142,8 @@ body {
   animation: petRainFall 1.3s linear infinite;
 }
 @keyframes petRainFall { 0% { transform: translateY(0); opacity: 0; } 15% { opacity: 0.65; } 100% { transform: translateY(60px); opacity: 0; } }
-.pet-encounter-portrait { position: relative; width: 132px; margin: 10px auto 14px; animation: petShiver 1.7s ease-in-out infinite; }
-.pet-encounter-portrait img { width: 100%; display: block; filter: saturate(0.55) brightness(0.9); }
+.pet-encounter-portrait { position: relative; width: 190px; margin: 10px auto 14px; animation: petShiver 1.7s ease-in-out infinite; }
+.pet-encounter-portrait img { width: 100%; display: block; }
 .pet-encounter-tear { position: absolute; font-size: 15px; animation: petTearFall 1.8s ease-in infinite; }
 @keyframes petShiver {
   0%, 100% { transform: translateY(0) rotate(0deg); }
@@ -2193,11 +2193,9 @@ function renderForestPet(data) {
           <span style="left:78%;animation-delay:0.2s;">💧</span>
         </div>
         <div class="pet-encounter-portrait">
-          <img src="img/pet/cat_portrait.png" alt="一隻可憐的迷路小貓">
-          <div class="pet-encounter-tear" style="left:38%;top:44%;animation-delay:0.3s;">💧</div>
-          <div class="pet-encounter-tear" style="left:58%;top:44%;animation-delay:1.1s;">💧</div>
+          <img src="img/pet/cat_box.png" alt="紙箱裡一隻可憐的迷路小貓">
         </div>
-        <div class="pet-encounter-text">你在森林餐廳後院，發現一隻全身濕答答、瑟瑟發抖的小貓蜷縮在角落，肚子餓得咕嚕叫，用水汪汪的大眼睛怯生生地看著你……<br>要帶牠回家嗎？</div>
+        <div class="pet-encounter-text">你在森林餐廳後院，發現一個紙箱裡蜷縮著一隻濕答答的小貓，用水汪汪的大眼睛怯生生地看著你……<br>要帶牠回家嗎？</div>
         <div class="pet-encounter-actions">
           <button class="pet-adopt-btn" onclick="adoptPet()">💕 帶牠回家</button>
           <button class="pet-decline-btn" onclick="declinePet()">先不要</button>
@@ -2439,6 +2437,15 @@ function spawnPetHearts() {
   }
 }
 
+const CAT_PORTRAIT_NEUTRAL = 'img/pet/cat_portrait.png';
+const CAT_PORTRAIT_EATING  = 'img/pet/cat_eating.png';
+const CAT_PORTRAIT_BATH    = 'img/pet/cat_bath.png';
+
+function setPetPortraitImage(src) {
+  const portrait = document.getElementById('pet-portrait');
+  if (portrait) portrait.src = src;
+}
+
 function petChewPortrait() {
   const portrait = document.getElementById('pet-portrait');
   portrait.classList.remove('chew');
@@ -2462,11 +2469,18 @@ function playPetFeedAnimation(emoji) {
   f.textContent = emoji;
   stage.appendChild(f);
   setTimeout(() => f.remove(), 700);
-  setTimeout(() => { petChewPortrait(); spawnPetYum(); }, 550);
+  setTimeout(() => {
+    setPetPortraitImage(CAT_PORTRAIT_EATING);
+    petChewPortrait();
+    spawnPetYum();
+  }, 550);
+  setTimeout(() => setPetPortraitImage(CAT_PORTRAIT_NEUTRAL), 550 + 900);
 }
 
 function playPetBathAnimation() {
   const stage = document.getElementById('pet-stage');
+  setPetPortraitImage(CAT_PORTRAIT_BATH);
+  setTimeout(() => setPetPortraitImage(CAT_PORTRAIT_NEUTRAL), 2300);
 
   const overlay = document.createElement('div');
   overlay.className = 'pet-bath-overlay';
