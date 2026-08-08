@@ -2395,11 +2395,13 @@ function petRoomMaybeBlink() {
 function openPetZoom() {
   document.getElementById('pet-zoom-modal').style.display = 'flex';
   stopPetRoom();
+  schedulePetPortraitBlink();
 }
 
 function closePetZoom() {
   document.getElementById('pet-zoom-modal').style.display = 'none';
   startPetRoom();
+  stopPetPortraitBlink();
 }
 
 function updatePetStatsUI() {
@@ -2472,10 +2474,46 @@ const CAT_PORTRAIT_BATH    = 'img/pet/cat_bath.png';
 const CAT_PORTRAIT_HAPPY   = 'img/pet/cat_happy.png';
 const CAT_PORTRAIT_GROOM   = 'img/pet/cat_groom_v3.png';
 const CAT_PORTRAIT_SLEEP   = 'img/pet/cat_sleep_v3.png';
+const CAT_PORTRAIT_BLINK   = 'img/pet/cat_portrait_blink.png';
 
 function setPetPortraitImage(src) {
   const portrait = document.getElementById('pet-portrait');
   if (portrait) portrait.src = src;
+}
+
+// ── 餵食彈窗的真閉眼眨眼（換整張臉圖，不是 CSS 擠壓）──
+// 摸摸/餵食/洗澡都會暫時把 pet-portrait 換成別的表情圖，這段時間眨眼要讓開，
+// 不然兩邊搶著換 src 會互相打架，最後卡在錯的表情上。
+let petBlinkTimer = null;
+let petPortraitBusyUntil = 0;
+
+function markPetPortraitBusy(ms) {
+  petPortraitBusyUntil = Math.max(petPortraitBusyUntil, Date.now() + ms);
+}
+
+function maybePetPortraitBlink() {
+  const modal = document.getElementById('pet-zoom-modal');
+  if (!modal || modal.style.display !== 'flex') return;
+  if (Date.now() < petPortraitBusyUntil) return;
+  if (Math.random() < 0.5) return; // 不用每次都眨，看起來更自然
+  const portrait = document.getElementById('pet-portrait');
+  if (!portrait || !portrait.src.includes('cat_portrait.png')) return; // 只有目前是中性表情才眨眼
+  setPetPortraitImage(CAT_PORTRAIT_BLINK);
+  setTimeout(() => {
+    if (portrait.src.includes('cat_portrait_blink.png')) setPetPortraitImage(CAT_PORTRAIT_NEUTRAL);
+  }, 200);
+}
+
+function schedulePetPortraitBlink() {
+  petBlinkTimer = setTimeout(() => {
+    maybePetPortraitBlink();
+    schedulePetPortraitBlink();
+  }, 3000 + Math.random() * 2000); // 3~5 秒隨機一次
+}
+
+function stopPetPortraitBlink() {
+  clearTimeout(petBlinkTimer);
+  petBlinkTimer = null;
 }
 
 function petChewPortrait() {
@@ -2495,6 +2533,7 @@ function spawnPetYum() {
 }
 
 function playPetFeedAnimation(emoji) {
+  markPetPortraitBusy(550 + 900);
   const stage = document.getElementById('pet-stage');
   const f = document.createElement('div');
   f.className = 'pet-food-fly';
@@ -2510,6 +2549,7 @@ function playPetFeedAnimation(emoji) {
 }
 
 function playPetBathAnimation() {
+  markPetPortraitBusy(2300);
   const stage = document.getElementById('pet-stage');
   setPetPortraitImage(CAT_PORTRAIT_BATH);
   setTimeout(() => setPetPortraitImage(CAT_PORTRAIT_NEUTRAL), 2300);
@@ -2545,6 +2585,7 @@ function playPetBathAnimation() {
 }
 
 function petTouch() {
+  markPetPortraitBusy(1200);
   const childId = currentChild;
   const s = getPetState(childId);
   const gained = gainCarePoints(s, 2);
