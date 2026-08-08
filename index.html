@@ -197,6 +197,13 @@ body {
 .pet-room-frame.frame-b { animation: petFrameB 0.5s steps(1) infinite; }
 @keyframes petFrameA { 0%,49% { opacity: 1; } 50%,100% { opacity: 0; } }
 @keyframes petFrameB { 0%,49% { opacity: 0; } 50%,100% { opacity: 1; } }
+/* 東張西望：左看/右看兩張圖交叉淡出，比走路的腳步慢很多，看起來像在慢慢左右張望 */
+.pet-room-idleframes { position: absolute; inset: 0; display: none; }
+.pet-room-idle-frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.pet-room-idle-frame.frame-a { animation: petIdleFrameA 2.8s steps(1) infinite; }
+.pet-room-idle-frame.frame-b { animation: petIdleFrameB 2.8s steps(1) infinite; }
+@keyframes petIdleFrameA { 0%,49% { opacity: 1; } 50%,100% { opacity: 0; } }
+@keyframes petIdleFrameB { 0%,49% { opacity: 0; } 50%,100% { opacity: 1; } }
 .pet-room-static { display: block; width: 100%; height: 100%; object-fit: contain; }
 @keyframes petWalkBob {
   0%, 100% { transform: translateY(0) rotate(0deg); }
@@ -2201,6 +2208,10 @@ function renderForestPet(data) {
                   <img class="pet-room-frame frame-a" src="img/pet/cat_walk_a.png" alt="">
                   <img class="pet-room-frame frame-b" src="img/pet/cat_walk_b.png" alt="">
                 </div>
+                <div class="pet-room-idleframes" id="pet-room-idleframes">
+                  <img class="pet-room-idle-frame frame-a" src="img/pet/cat_idle_left.png" alt="">
+                  <img class="pet-room-idle-frame frame-b" src="img/pet/cat_idle_right.png" alt="">
+                </div>
                 <img class="pet-room-static" id="pet-room-static" src="img/pet/cat_portrait.png" alt="貓咪">
               </div>
             </div>
@@ -2259,6 +2270,7 @@ function petRoomEls() {
     flip: document.getElementById('pet-room-flip'),
     sprite: document.getElementById('pet-room-sprite'),
     walkFrames: document.getElementById('pet-room-walkframes'),
+    idleFrames: document.getElementById('pet-room-idleframes'),
     staticImg: document.getElementById('pet-room-static'),
   };
 }
@@ -2299,6 +2311,7 @@ function petRoomTick() {
   els.sprite.classList.remove('pet-room-walking');
   els.staticImg.style.transform = '';
   els.staticImg.src = CAT_PORTRAIT_NEUTRAL;
+  els.idleFrames.style.display = 'none';
 
   const roll = Math.random();
   let state, duration;
@@ -2332,8 +2345,8 @@ function petRoomTick() {
     duration = 2 + Math.random() * 2;
     freezePetRoomPosition(els);
     els.walkFrames.style.display = 'none';
-    els.staticImg.style.display = 'block';
-    els.staticImg.src = CAT_PORTRAIT_IDLE_LOOK;
+    els.staticImg.style.display = 'none';
+    els.idleFrames.style.display = 'block';
     setRoomStatus('貓咪東張西望中…');
   } else if (state === 'sitting') {
     duration = 3 + Math.random() * 3;
@@ -2369,7 +2382,8 @@ function petRoomTick() {
 }
 
 function petRoomMaybeBlink() {
-  if (petRoomCurrentState !== 'idle' && petRoomCurrentState !== 'sitting') return; // 走路/理毛/睡覺時不眨眼
+  // 東張西望現在是左看/右看兩張圖交叉播放，不再用同一張圖疊眨眼動畫；只有坐著休息還是單張靜態圖需要眨眼
+  if (petRoomCurrentState !== 'sitting') return;
   if (Math.random() < 0.5) return; // 不用每次都眨，看起來更自然
   const els = petRoomEls();
   if (!els.staticImg) return;
@@ -2458,7 +2472,6 @@ const CAT_PORTRAIT_BATH    = 'img/pet/cat_bath.png';
 const CAT_PORTRAIT_HAPPY   = 'img/pet/cat_happy.png';
 const CAT_PORTRAIT_GROOM   = 'img/pet/cat_groom_v3.png';
 const CAT_PORTRAIT_SLEEP   = 'img/pet/cat_sleep_v3.png';
-const CAT_PORTRAIT_IDLE_LOOK = 'img/pet/cat_idle.png';
 
 function setPetPortraitImage(src) {
   const portrait = document.getElementById('pet-portrait');
