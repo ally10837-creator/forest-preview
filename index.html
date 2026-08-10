@@ -1611,6 +1611,29 @@ body.audio-settings-open { overflow: hidden; }
   </div>
 </div>
 
+<div class="confirm-overlay" id="pet-setup-overlay">
+  <div class="confirm-box" style="max-width:300px;">
+    <div id="pet-setup-step-pin">
+      <div class="confirm-msg">請媽媽輸入 PIN<br>完成寵物設定</div>
+      <input type="password" class="pin-input" id="pet-setup-pin-input" maxlength="6" placeholder="••••••" inputmode="numeric" style="margin-bottom:10px;">
+      <div class="pin-err" id="pet-setup-pin-err"></div>
+      <div class="confirm-btns" style="margin-top:10px;">
+        <button class="confirm-cancel" onclick="closePetSetup()">取消</button>
+        <button class="confirm-ok" onclick="submitPetSetupPin()">下一步</button>
+      </div>
+    </div>
+    <div id="pet-setup-step-name" style="display:none;">
+      <div class="confirm-msg">幫你的新朋友取個名字吧！</div>
+      <input type="text" class="pin-input" id="pet-setup-name-input" maxlength="12" placeholder="寵物的名字" style="letter-spacing:normal;font-size:18px;margin-bottom:10px;">
+      <div class="pin-err" id="pet-setup-name-err"></div>
+      <div class="confirm-btns" style="margin-top:10px;">
+        <button class="confirm-cancel" onclick="closePetSetup()">取消</button>
+        <button class="confirm-ok" onclick="submitPetSetupName()">完成領養！</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════════════════════════════════ -->
 <!--                JAVASCRIPT                   -->
 <!-- ═══════════════════════════════════════════ -->
@@ -2157,11 +2180,138 @@ function gainCarePoints(s, amount) {
   return gained;
 }
 
-function adoptPet() {
+// Phase 2A 前端整合：領養＋取名這一刻接上真後端 initializePet（已通過 22 輪審查、
+// 已在正式 Apps Script + Sheets 環境實測）。日常互動（餵食/摸摸/長大）維持本機模擬，
+// 因為後端 feedPetFood 等 Phase 2B 功能還沒做，不在這輪範圍內。
+function petDeviceTokenKey(childId) { return 'forest_device_token_' + childId; }
+
+async function callPhase2A(action, payload) {
+  try {
+    const res = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...payload })
+    });
+    return await res.json();
+  } catch (e) {
+    return { ok: false, error: 'network_error' };
+  }
+}
+
+// 跟後端 isValidCanonicalPetName_ 對齊的規則，純粹提早給前端回饋，不取代後端驗證。
+function isValidCanonicalPetNameClient_(name) {
+  return typeof name === 'string' && name.length > 0 && name === name.trim() && Array.from(name).length <= 12;
+}
+
+// 統一把後端各種錯誤碼／reason 轉成孩子/媽媽看得懂的中文，4 個新 API 呼叫共用一份對照。
+// credential_conflict 有時候在 error 頂層（createPairingCode）、有時候包在 invalid_token
+// 的 reason 裡（exchangePairingCode），照後端實際合約兩種都要接住。
+function describePhase2AError_(res) {
+  if (res.error === 'invalid_pin') {
+    return 'PIN 錯誤，請再試一次' + (res.attempts_remaining != null ? '（還剩 ' + res.attempts_remaining + ' 次）' : '');
+  }
+  if (res.error === 'credential_conflict' || res.reason === 'credential_conflict') {
+    return '配對資料異常，請聯絡管理員處理';
+  }
+  if (res.reason === 'locked') {
+    const until = res.locked_until ? new Date(res.locked_until) : null;
+    return until ? ('已鎖定，請 ' + until.toLocaleTimeString('zh-TW', {hour:'2-digit',minute:'2-digit'}) + ' 之後再試') : '已鎖定，請稍後再試';
+  }
+  if (res.reason === 'expired') return '配對已過期，請重新開始';
+  if (res.reason === 'not_found' || res.reason === 'mismatch') return '配對資料不正確，請重新開始';
+  if (res.error === 'already_has_pet') return '這個帳號好像已經有寵物了，資料可能不同步，請聯絡媽媽確認';
+  if (res.error === 'missing_pet_name') return '請輸入寵物的名字';
+  if (res.error === 'unknown_child_id') return '找不到這個孩子的資料，請聯絡管理員';
+  if (res.error === 'not_configured') return '尚未設定媽媽 PIN，請聯絡管理員';
+  return '設定失敗，請聯絡管理員';
+}
+
+function openPetSetup() {
+  document.getElementById('pet-setup-step-pin').style.display = '';
+  document.getElementById('pet-setup-step-name').style.display = 'none';
+  document.getElementById('pet-setup-pin-input').value = '';
+  document.getElementById('pet-setup-pin-err').textContent = '';
+  document.getElementById('pet-setup-overlay').classList.add('show');
+}
+
+function closePetSetup() {
+  document.getElementById('pet-setup-overlay').classList.remove('show');
+}
+
+async function submitPetSetupPin() {
   const childId = currentChild;
+  const pin = document.getElementById('pet-setup-pin-input').value;
+  const errEl = document.getElementById('pet-setup-pin-err');
+  const inputEl = document.getElementById('pet-setup-pin-input');
+  errEl.textContent = '';
+
+  const adminRes = await callPhase2A('issueAdminToken', { pin });
+  if (!adminRes.ok) {
+    if (adminRes.error === 'network_error') { showToast('⚠️ 網路錯誤', 'error'); return; }
+    errEl.textContent = describePhase2AError_(adminRes);
+    inputEl.classList.add('shake');
+    inputEl.value = '';
+    setTimeout(() => inputEl.classList.remove('shake'), 500);
+    return;
+  }
+
+  const pairRes = await callPhase2A('createPairingCode', { adminToken: adminRes.admin_token, childId });
+  if (!pairRes.ok) {
+    if (pairRes.error === 'network_error') { showToast('⚠️ 網路錯誤', 'error'); return; }
+    errEl.textContent = describePhase2AError_(pairRes);
+    return;
+  }
+
+  const exchRes = await callPhase2A('exchangePairingCode', { childId, pairingCode: pairRes.pairing_code, deviceLabel: '森林餐館裝置' });
+  if (!exchRes.ok) {
+    if (exchRes.error === 'network_error') { showToast('⚠️ 網路錯誤', 'error'); return; }
+    errEl.textContent = describePhase2AError_(exchRes);
+    return;
+  }
+
+  localStorage.setItem(petDeviceTokenKey(childId), exchRes.device_token);
+  document.getElementById('pet-setup-step-pin').style.display = 'none';
+  document.getElementById('pet-setup-step-name').style.display = '';
+  document.getElementById('pet-setup-name-input').value = '';
+  document.getElementById('pet-setup-name-err').textContent = '';
+}
+
+async function submitPetSetupName() {
+  const childId = currentChild;
+  const nameInput = document.getElementById('pet-setup-name-input');
+  const errEl = document.getElementById('pet-setup-name-err');
+  const petName = nameInput.value.trim();
+  errEl.textContent = '';
+
+  if (!isValidCanonicalPetNameClient_(petName)) {
+    errEl.textContent = '請輸入 1~12 個字的名字';
+    return;
+  }
+
+  const deviceToken = localStorage.getItem(petDeviceTokenKey(childId));
+  if (!deviceToken) {
+    errEl.textContent = '設定資料遺失，請重新開始';
+    return;
+  }
+
+  const clientRequestId = 'petsetup-' + childId + '-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+  const res = await callPhase2A('initializePet', { childId, deviceToken, clientRequestId, petName });
+
+  if (res.error === 'network_error') { showToast('⚠️ 網路錯誤', 'error'); return; }
+  if (!res.ok) {
+    errEl.textContent = describePhase2AError_(res);
+    return;
+  }
+
+  const s = getPetState(childId);
+  s.pet_id = res.result.pet_id;
+  s.species = res.result.species;
+  s.pet_name = res.result.pet_name;
+  savePetState(childId, s);
   localStorage.setItem(petAdoptedKey(childId), 'true');
-  savePetState(childId, getPetState(childId)); // 建立初始寵物資料
-  showToast('🎉 恭喜你領養了一隻小貓！', 'success');
+
+  closePetSetup();
+  showToast(`🎉 恭喜你領養了 ${res.result.pet_name}！`, 'success');
   renderForestPet(allData[currentChild]);
 }
 
@@ -2188,7 +2338,7 @@ function renderForestPet(data) {
         </div>
         <div class="pet-encounter-text">你在森林餐廳後院，發現一個紙箱裡蜷縮著一隻濕答答的小貓，用水汪汪的大眼睛怯生生地看著你……<br>要帶牠回家嗎？</div>
         <div class="pet-encounter-actions">
-          <button class="pet-adopt-btn" onclick="adoptPet()">💕 帶牠回家</button>
+          <button class="pet-adopt-btn" onclick="openPetSetup()">💕 帶牠回家</button>
           <button class="pet-decline-btn" onclick="declinePet()">先不要</button>
         </div>
       </div>`;
