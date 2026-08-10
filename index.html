@@ -1627,7 +1627,11 @@ body.audio-settings-open { overflow: hidden; }
     </div>
     <div id="pet-setup-step-name" style="display:none;">
       <div class="confirm-msg">幫你的新朋友取個名字吧！</div>
-      <input type="text" class="pin-input" id="pet-setup-name-input" maxlength="12" placeholder="寵物的名字" style="letter-spacing:normal;font-size:18px;margin-bottom:10px;">
+      <!-- maxlength 故意設 24，不是真正的 12 字上限：HTML maxlength 是按 UTF-16 code
+           unit 算，emoji 等字元一個字就佔 2 個 code unit，12 個 code point 最壞情況要
+           24 個 code unit 才放得下。真正的 12 字限制交給 isValidCanonicalPetNameClient_
+           （跟後端一樣按 Unicode code point 算），這裡只是避免瀏覽器提早擋住合法輸入。 -->
+      <input type="text" class="pin-input" id="pet-setup-name-input" maxlength="24" placeholder="寵物的名字" style="letter-spacing:normal;font-size:18px;margin-bottom:10px;">
       <div class="pin-err" id="pet-setup-name-err"></div>
       <div class="confirm-btns" style="margin-top:10px;">
         <button class="confirm-cancel" onclick="closePetSetup()">取消</button>
@@ -1654,10 +1658,18 @@ const API = "https://script.google.com/macros/s/AKfycbwN5j0D9Js4cSW0NXJF6xBAUVQa
   ]);
   let apiOrigin = '', apiPath = '';
   try { const apiUrl = new URL(API); apiOrigin = apiUrl.origin; apiPath = apiUrl.pathname; } catch (e) {}
-  function isReadOnlyRequest(rawUrl, init) {
+  function isReadOnlyRequest(rawUrl, init, isRequestObject) {
     try {
       const u = new URL(rawUrl, window.location.href);
       if (u.origin !== apiOrigin || u.pathname !== apiPath) return true;
+
+      // fetch(new Request(url, {method, body})) 可以把 method/body 包在 Request 物件
+      // 建構子裡，這時候呼叫 fetch 時傳進來的 init 是 undefined，上面 POST 那條判斷會
+      // 讀不到真正的 method/body，直接落到下面的 GET 分支，等於攔截器被繞過。整個
+      // 程式碼庫目前唯一的呼叫方式就是「字串 URL + fetch 第二參數 init」（見
+      // callPhase2A），從來不會用 Request 物件打這支 API——fail-closed：只要是打
+      // 這支 API 的 Request 物件呼叫，不嘗試解析，一律擋下。
+      if (isRequestObject) return false;
 
       const method = ((init && init.method) || 'GET').toUpperCase();
       if (method === 'POST') {
@@ -1680,8 +1692,9 @@ const API = "https://script.google.com/macros/s/AKfycbwN5j0D9Js4cSW0NXJF6xBAUVQa
   }
   const _origFetch = window.fetch.bind(window);
   window.fetch = function (input, init) {
+    const isRequestObject = (typeof Request !== 'undefined') && (input instanceof Request);
     const url = typeof input === 'string' ? input : (input && input.url) || '';
-    if (!isReadOnlyRequest(url, init)) {
+    if (!isReadOnlyRequest(url, init, isRequestObject)) {
       try { showToast('🧪 測試預覽不會送出資料', 'warn'); } catch (e) {}
       const body = JSON.stringify({ error: '測試預覽不會送出資料，此操作已停用' });
       return Promise.resolve(new Response(body, { status: 200, headers: { 'Content-Type': 'application/json' } }));
@@ -2218,27 +2231,53 @@ function gainCarePoints(s, amount) {
 // 因為後端 feedPetFood 等 Phase 2B 功能還沒做，不在這輪範圍內。
 function petDeviceTokenKey(childId) { return 'forest_device_token_' + childId; }
 
-// 冪等性：clientRequestId 一旦為某個孩子產生，就要在同一次「設定精靈」流程裡
-// 重複使用，不能每次呼叫 initializePet 都重新產生一組新的。否則如果後端其實
-// 已經成功、只是回應逾時，使用者重點一次會帶新 ID 打到後端，變成打一個「新的」
-// 初始化請求，得到 already_has_pet，但前端從沒收到過成功結果，畫面仍顯示未領養。
-function petSetupPendingRequestKey(childId) { return 'forest_pet_setup_pending_request_' + childId; }
+// 冪等性：pending 交易要把 clientRequestId 「跟送出當下的 petName」綁在一起持久化，
+// 不能只存 ID。後端 initializePet 是拿 (childId, clientRequestId, tx_type) 找既有交易，
+// 再核對 payload_snapshot（含 petName）是否跟這次請求一致——如果同一個 ID 第二次帶了
+// 不同名字，後端會正確回 conflict，但如果前端這時候只記得 ID、不記得「原本送出的是
+// 哪個名字」，就沒辦法用同一份原始 payload 重新查詢／重送，只能被動顯示錯誤。
+function petSetupPendingKey(childId) { return 'forest_pet_setup_pending_' + childId; }
 
-function getPetSetupRequestId(childId) {
-  const key = petSetupPendingRequestKey(childId);
-  let id = localStorage.getItem(key);
-  if (!id) {
-    id = 'petsetup-' + childId + '-' + Date.now() + '-' + Math.random().toString(36).slice(2);
-    localStorage.setItem(key, id);
-  }
-  return id;
+function getPetSetupPending(childId) {
+  try {
+    const raw = localStorage.getItem(petSetupPendingKey(childId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.clientRequestId !== 'string' || typeof parsed.petName !== 'string') return null;
+    return parsed;
+  } catch (e) { return null; }
 }
 
-function clearPetSetupRequestId(childId) {
-  localStorage.removeItem(petSetupPendingRequestKey(childId));
+// 只在「這次送出的名字」跟目前 pending 記錄的不一樣時才需要重新產生 ID；同一個
+// pending 尚未解決之前，重複呼叫要拿到一模一樣的 {clientRequestId, petName}。
+function getOrCreatePetSetupPending(childId, petName) {
+  const existing = getPetSetupPending(childId);
+  if (existing) return existing;
+  const pending = {
+    clientRequestId: 'petsetup-' + childId + '-' + Date.now() + '-' + Math.random().toString(36).slice(2),
+    petName
+  };
+  localStorage.setItem(petSetupPendingKey(childId), JSON.stringify(pending));
+  return pending;
 }
+
+// 只能在「成功」或「確認這筆交易從未在後端建立過（getTransactionStatus 回
+// not_found，且緊接著用同一份原始 payload 重送已經有明確終態）」之後呼叫。
+// conflict／error_unsynced／already_has_pet／invalid_token 都不可以呼叫這個
+// 清掉 pending，否則使用者下一次會帶新 ID 送出，讓原本那筆交易更難人工復原。
+function clearPetSetupPending(childId) {
+  localStorage.removeItem(petSetupPendingKey(childId));
+}
+
+// 後端 initializePet／getTransactionStatus 都會 waitLock(10000)，20 秒給足夠的
+// 鎖等待＋試算表 I/O 緩衝，同時仍然是一個「真的會觸發」的上限——不加這個，Safari
+// 如果一直不回應，fetch 會無限期掛著，按鈕永遠 disabled，也永遠不會產生
+// network_error，等於「逾時後查詢收斂」這條路徑根本沒有入口可以被觸發。
+const PHASE2A_TIMEOUT_MS = 20000;
 
 async function callPhase2A(action, payload) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), PHASE2A_TIMEOUT_MS);
   try {
     // Content-Type 故意用 text/plain（不是 application/json）：application/json 不在
     // CORS safelist 內，瀏覽器會先送 OPTIONS preflight，但 Apps Script Web App 對
@@ -2248,11 +2287,14 @@ async function callPhase2A(action, payload) {
     const res = await fetch(API, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-      body: JSON.stringify({ action, ...payload })
+      body: JSON.stringify({ action, ...payload }),
+      signal: controller.signal
     });
     return await res.json();
   } catch (e) {
     return { ok: false, error: 'network_error' };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -2336,29 +2378,79 @@ async function submitPetSetupPin() {
     localStorage.setItem(petDeviceTokenKey(childId), exchRes.device_token);
     document.getElementById('pet-setup-step-pin').style.display = 'none';
     document.getElementById('pet-setup-step-name').style.display = '';
-    document.getElementById('pet-setup-name-input').value = '';
+    // 如果這個孩子已經有上次中斷的 pending 交易，把輸入框顯示成當初真正送出的
+    // 名字——submitPetSetupName 只要偵測到 pending 就會沿用那個名字重試，不看
+    // 輸入框內容，這裡先讓畫面上看到的名字跟實際會發生的事一致，避免使用者以為
+    // 自己還能改名字。
+    const existingPending = getPetSetupPending(childId);
+    document.getElementById('pet-setup-name-input').value = existingPending ? existingPending.petName : '';
     document.getElementById('pet-setup-name-err').textContent = '';
   } finally {
     submitBtn.disabled = false;
   }
 }
 
+// 只查狀態，絕對不送出新的初始化請求——用來在「已經有 pending 交易」時，優先弄清楚
+// 後端真正的狀態，而不是貿然用（可能跟原始請求不同的）當下輸入內容再打一次。
+async function queryPetSetupStatus_(deviceToken, pending) {
+  const statusRes = await callPhase2A('getTransactionStatus', { deviceToken, clientRequestId: pending.clientRequestId });
+  if (statusRes.error === 'network_error') return { kind: 'network_error' };
+  if (!statusRes.ok) {
+    if (statusRes.error === 'not_found') return { kind: 'not_found' };
+    // invalid_token 等認證層級問題：不確定交易本身是否安全，凍結 pending、顯示訊息，
+    // 不自動重試、不清 pending。
+    return { kind: 'blocked', message: describePhase2AError_(statusRes) };
+  }
+  if (statusRes.status === 'success' && statusRes.result) return { kind: 'success', result: statusRes.result };
+  if (statusRes.status === 'processing') return { kind: 'processing' };
+  if (statusRes.status === 'failed') return { kind: 'blocked', message: '這筆寵物設定已經失敗了（可能是名字衝突或帳號狀態異常），請聯絡媽媽確認後重新開始' };
+  if (statusRes.status === 'error_unsynced') return { kind: 'blocked', message: '資料需要人工核對，請聯絡管理員處理' };
+  return { kind: 'blocked', message: '設定失敗，請聯絡管理員' };
+}
+
+function normalizeInitializePetResult_(res) {
+  if (res.ok) return { kind: 'success', result: res.result };
+  // conflict／already_has_pet／error_unsynced／invalid_token（含巢狀在 reason 裡的
+  // credential_conflict）全部屬於「不可清除 pending」的明確業務錯誤。
+  return { kind: 'blocked', message: describePhase2AError_(res) };
+}
+
+// 呼叫 initializePet；如果因為逾時／網路問題失敗，改成用同一個 clientRequestId
+// 查一次狀態（不是再送一次 initializePet），把「這一次動作」需要的網路呼叫包成
+// 一個統一、正規化過的結果。
+async function attemptInitializePet_(childId, deviceToken, pending) {
+  const res = await callPhase2A('initializePet', {
+    childId, deviceToken, clientRequestId: pending.clientRequestId, petName: pending.petName
+  });
+  if (res.error === 'network_error') return await queryPetSetupStatus_(deviceToken, pending);
+  return normalizeInitializePetResult_(res);
+}
+
+function finishPetSetupSuccess_(childId, result) {
+  const s = getPetState(childId);
+  s.pet_id = result.pet_id;
+  s.species = result.species;
+  s.pet_name = result.pet_name;
+  savePetState(childId, s);
+  localStorage.setItem(petAdoptedKey(childId), 'true');
+  localStorage.setItem(petPhase2ADoneKey(childId), 'true');
+  clearPetSetupPending(childId);
+
+  closePetSetup();
+  showToast(`🎉 恭喜你領養了 ${result.pet_name}！`, 'success');
+  renderForestPet(allData[currentChild]);
+}
+
 async function submitPetSetupName() {
   const submitBtn = document.getElementById('pet-setup-name-submit-btn');
-  // busy 狀態防止 iPad 連點：避免同一次領養在網路還沒回應時被連點觸發多次 initializePet。
+  // busy 狀態防止 iPad 連點：避免同一次領養在網路還沒回應時被連點觸發多次呼叫。
   if (submitBtn.disabled) return;
   submitBtn.disabled = true;
   try {
     const childId = currentChild;
     const nameInput = document.getElementById('pet-setup-name-input');
     const errEl = document.getElementById('pet-setup-name-err');
-    const petName = nameInput.value.trim();
     errEl.textContent = '';
-
-    if (!isValidCanonicalPetNameClient_(petName)) {
-      errEl.textContent = '請輸入 1~12 個字的名字';
-      return;
-    }
 
     const deviceToken = localStorage.getItem(petDeviceTokenKey(childId));
     if (!deviceToken) {
@@ -2366,48 +2458,45 @@ async function submitPetSetupName() {
       return;
     }
 
-    // 冪等性：同一個孩子在完成（或放棄）這次設定精靈之前，重複使用同一個
-    // clientRequestId，不要每次呼叫都重新產生。
-    const clientRequestId = getPetSetupRequestId(childId);
-    let res = await callPhase2A('initializePet', { childId, deviceToken, clientRequestId, petName });
+    let pending = getPetSetupPending(childId);
+    let outcome;
 
-    if (res.error === 'network_error') {
-      // 逾時／網路錯誤不能直接當失敗處理：後端可能其實已經成功寫入，只是回應
-      // 沒送達。用同一個 clientRequestId 查一次交易狀態，不要讓使用者再點一次
-      // 「完成領養」時換成新 ID、打出一個新的初始化請求（那樣會得到
-      // already_has_pet，但前端從沒收到過成功結果）。
-      const statusRes = await callPhase2A('getTransactionStatus', { deviceToken, clientRequestId });
-      if (statusRes.ok && statusRes.status === 'success' && statusRes.result) {
-        res = { ok: true, result: statusRes.result };
-      } else if (statusRes.ok && statusRes.status === 'processing') {
-        showToast('⚠️ 還在處理中，請稍後再點一次「完成領養」', 'warn');
-        return; // 保留同一個 pending clientRequestId，下次點擊沿用
-      } else {
-        showToast('⚠️ 網路錯誤，請稍後再試一次', 'error');
-        return; // 保留同一個 pending clientRequestId，下次點擊沿用
+    if (pending) {
+      // 已經有上次中斷的交易：一律先查真正的後端狀態，不管輸入框現在打了什麼，
+      // 避免用（可能不同的）當下輸入內容打出第二筆會衝突的請求。
+      outcome = await queryPetSetupStatus_(deviceToken, pending);
+      if (outcome.kind === 'not_found') {
+        // 確認後端從沒收到過這筆交易，可以安全地用同一份原始 payload（同 ID、同名字）重送。
+        outcome = await attemptInitializePet_(childId, deviceToken, pending);
       }
+    } else {
+      const petName = nameInput.value.trim();
+      if (!isValidCanonicalPetNameClient_(petName)) {
+        errEl.textContent = '請輸入 1~12 個字的名字';
+        return;
+      }
+      pending = getOrCreatePetSetupPending(childId, petName);
+      outcome = await attemptInitializePet_(childId, deviceToken, pending);
     }
 
-    if (!res.ok) {
-      errEl.textContent = describePhase2AError_(res);
-      // 明確的業務錯誤（非網路問題）代表這個 clientRequestId 已經跟後端「用掉」了，
-      // 不該再重用，讓使用者重新開始會產生一個乾淨的新 ID。
-      clearPetSetupRequestId(childId);
-      return;
+    if (outcome.kind === 'success') { finishPetSetupSuccess_(childId, outcome.result); return; }
+    if (outcome.kind === 'processing') {
+      showToast('⚠️ 還在處理中，請稍後再點一次「完成領養」', 'warn');
+      return; // 保留 pending
     }
-
-    const s = getPetState(childId);
-    s.pet_id = res.result.pet_id;
-    s.species = res.result.species;
-    s.pet_name = res.result.pet_name;
-    savePetState(childId, s);
-    localStorage.setItem(petAdoptedKey(childId), 'true');
-    localStorage.setItem(petPhase2ADoneKey(childId), 'true');
-    clearPetSetupRequestId(childId);
-
-    closePetSetup();
-    showToast(`🎉 恭喜你領養了 ${res.result.pet_name}！`, 'success');
-    renderForestPet(allData[currentChild]);
+    if (outcome.kind === 'network_error' || outcome.kind === 'not_found') {
+      // not_found 走到這裡代表「剛剛那次 attemptInitializePet_ 內部重送又逾時、
+      // 緊接著查到的狀態還是 not_found」——跟 network_error 一樣，都是這一次點擊
+      // 沒有得到確定的結果，不是明確的業務錯誤，訊息跟處理方式相同：保留 pending，
+      // 請使用者稍後再點一次（下次點擊會走上面「已有 pending」那條分支，重新查
+      // 狀態、必要時再用同一份原始 payload 安全地重送）。
+      showToast('⚠️ 網路錯誤，請稍後再試一次', 'error');
+      return; // 保留 pending
+    }
+    // outcome.kind === 'blocked'：conflict／failed／error_unsynced／already_has_pet／
+    // invalid_token 等明確業務錯誤，顯示訊息、停止自動重試，但不清 pending（見
+    // clearPetSetupPending 定義處的說明）。
+    errEl.textContent = outcome.message;
   } finally {
     submitBtn.disabled = false;
   }
