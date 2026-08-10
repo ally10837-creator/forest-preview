@@ -223,6 +223,8 @@ body {
 }
 @keyframes petGroomFx { 0%,100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.1); } }
 .pet-room-status { font-size: 12px; color: var(--cocoa-soft); text-align: center; padding: 6px 16px 0; }
+.pet-room-name { font-size: 15px; font-weight: 700; color: var(--cocoa); text-align: center; padding: 8px 16px 0; }
+.pet-name-label { font-size: 15px; font-weight: 700; color: var(--cocoa); text-align: center; margin-bottom: 4px; }
 
 /* ── 摸摸/餵食放大彈窗 ── */
 .pet-zoom-modal {
@@ -798,6 +800,7 @@ body.audio-settings-open { overflow: hidden; }
 }
 .confirm-ok  { background:var(--rose); color:white; }
 .confirm-cancel { background:white; color:var(--cocoa); }
+.confirm-ok:disabled { background:#ddd; color:#999; cursor:not-allowed; box-shadow:none; border-color:#ccc; }
 
 /* ── INSUFFICIENT FUNDS MODAL ── */
 .funds-modal {
@@ -1619,7 +1622,7 @@ body.audio-settings-open { overflow: hidden; }
       <div class="pin-err" id="pet-setup-pin-err"></div>
       <div class="confirm-btns" style="margin-top:10px;">
         <button class="confirm-cancel" onclick="closePetSetup()">取消</button>
-        <button class="confirm-ok" onclick="submitPetSetupPin()">下一步</button>
+        <button class="confirm-ok" id="pet-setup-pin-submit-btn" onclick="submitPetSetupPin()">下一步</button>
       </div>
     </div>
     <div id="pet-setup-step-name" style="display:none;">
@@ -1628,7 +1631,7 @@ body.audio-settings-open { overflow: hidden; }
       <div class="pin-err" id="pet-setup-name-err"></div>
       <div class="confirm-btns" style="margin-top:10px;">
         <button class="confirm-cancel" onclick="closePetSetup()">取消</button>
-        <button class="confirm-ok" onclick="submitPetSetupName()">完成領養！</button>
+        <button class="confirm-ok" id="pet-setup-name-submit-btn" onclick="submitPetSetupName()">完成領養！</button>
       </div>
     </div>
   </div>
@@ -1643,12 +1646,33 @@ const API = "https://script.google.com/macros/s/AKfycbwN5j0D9Js4cSW0NXJF6xBAUVQa
 // 🧪 測試預覽站：PIN 已移除，媽媽後台一律停用（見 checkPin()／showPage()）
 (function () {
   const READ_ONLY_ACTIONS = new Set(['getSetting', 'checkWeather']);
+  // 本輪（Phase 2A 前端整合）審查核准可在測試預覽站直接呼叫的 doPost action，
+  // 明確列出白名單，其餘一律 fail-closed（不在白名單、body 解析失敗、沒有
+  // action 欄位，都視為非唯讀請求擋下）。
+  const PHASE2A_APPROVED_POST_ACTIONS = new Set([
+    'issueAdminToken', 'createPairingCode', 'exchangePairingCode', 'initializePet', 'getTransactionStatus'
+  ]);
   let apiOrigin = '', apiPath = '';
   try { const apiUrl = new URL(API); apiOrigin = apiUrl.origin; apiPath = apiUrl.pathname; } catch (e) {}
-  function isReadOnlyRequest(rawUrl) {
+  function isReadOnlyRequest(rawUrl, init) {
     try {
       const u = new URL(rawUrl, window.location.href);
       if (u.origin !== apiOrigin || u.pathname !== apiPath) return true;
+
+      const method = ((init && init.method) || 'GET').toUpperCase();
+      if (method === 'POST') {
+        // 舊版這裡只檢查 URL query 的 action。Phase 2A 前端改成 POST + JSON body
+        // 傳 action，URL 本身沒有 action 參數，舊邏輯的 `if (!action) return true`
+        // 會把它當成唯讀請求直接放行——等於攔截器被繞過。改成直接解析 init.body，
+        // 只認明確核准的 action，body 不是字串／解析失敗／沒有 action／不在白名單，
+        // 一律視為非唯讀請求擋下。
+        if (typeof init.body !== 'string') return false;
+        let parsedBody;
+        try { parsedBody = JSON.parse(init.body); } catch (e) { return false; }
+        const action = parsedBody && parsedBody.action;
+        return !!action && PHASE2A_APPROVED_POST_ACTIONS.has(action);
+      }
+
       const action = u.searchParams.get('action');
       if (!action) return true;
       return READ_ONLY_ACTIONS.has(action);
@@ -1657,7 +1681,7 @@ const API = "https://script.google.com/macros/s/AKfycbwN5j0D9Js4cSW0NXJF6xBAUVQa
   const _origFetch = window.fetch.bind(window);
   window.fetch = function (input, init) {
     const url = typeof input === 'string' ? input : (input && input.url) || '';
-    if (!isReadOnlyRequest(url)) {
+    if (!isReadOnlyRequest(url, init)) {
       try { showToast('🧪 測試預覽不會送出資料', 'warn'); } catch (e) {}
       const body = JSON.stringify({ error: '測試預覽不會送出資料，此操作已停用' });
       return Promise.resolve(new Response(body, { status: 200, headers: { 'Content-Type': 'application/json' } }));
@@ -2136,6 +2160,15 @@ function isPetAdopted(childId) {
   return localStorage.getItem(petAdoptedKey(childId)) === 'true';
 }
 
+// Phase 2A 前端整合：區分「本機模擬領養」跟「真的完成後端 initializePet」。
+// 舊版只要 forest_pet_adopted_<childId> 是 true 就永遠不再顯示設定入口，
+// Ally 先前測過的舊本機領養流程會卡在這個狀態、永遠看不到取名字的地方。
+function petPhase2ADoneKey(childId) { return 'forest_pet_phase2a_done_' + childId; }
+
+function isPetPhase2ADone(childId) {
+  return localStorage.getItem(petPhase2ADoneKey(childId)) === 'true';
+}
+
 function getPetState(childId) {
   let s = null;
   try { s = JSON.parse(localStorage.getItem(petStorageKey(childId))); } catch (e) { s = null; }
@@ -2185,11 +2218,36 @@ function gainCarePoints(s, amount) {
 // 因為後端 feedPetFood 等 Phase 2B 功能還沒做，不在這輪範圍內。
 function petDeviceTokenKey(childId) { return 'forest_device_token_' + childId; }
 
+// 冪等性：clientRequestId 一旦為某個孩子產生，就要在同一次「設定精靈」流程裡
+// 重複使用，不能每次呼叫 initializePet 都重新產生一組新的。否則如果後端其實
+// 已經成功、只是回應逾時，使用者重點一次會帶新 ID 打到後端，變成打一個「新的」
+// 初始化請求，得到 already_has_pet，但前端從沒收到過成功結果，畫面仍顯示未領養。
+function petSetupPendingRequestKey(childId) { return 'forest_pet_setup_pending_request_' + childId; }
+
+function getPetSetupRequestId(childId) {
+  const key = petSetupPendingRequestKey(childId);
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = 'petsetup-' + childId + '-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+    localStorage.setItem(key, id);
+  }
+  return id;
+}
+
+function clearPetSetupRequestId(childId) {
+  localStorage.removeItem(petSetupPendingRequestKey(childId));
+}
+
 async function callPhase2A(action, payload) {
   try {
+    // Content-Type 故意用 text/plain（不是 application/json）：application/json 不在
+    // CORS safelist 內，瀏覽器會先送 OPTIONS preflight，但 Apps Script Web App 對
+    // OPTIONS 回 405，導致真正的 POST 永遠送不出去。後端 doPost 是直接讀
+    // e.postData.contents 用 JSON.parse 解析，不看 Content-Type，所以這樣傳完全不影響
+    // 後端解析，純粹是為了避開瀏覽器的 preflight。
     const res = await fetch(API, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
       body: JSON.stringify({ action, ...payload })
     });
     return await res.json();
@@ -2239,80 +2297,120 @@ function closePetSetup() {
 }
 
 async function submitPetSetupPin() {
-  const childId = currentChild;
-  const pin = document.getElementById('pet-setup-pin-input').value;
-  const errEl = document.getElementById('pet-setup-pin-err');
-  const inputEl = document.getElementById('pet-setup-pin-input');
-  errEl.textContent = '';
+  const submitBtn = document.getElementById('pet-setup-pin-submit-btn');
+  // busy 狀態防止 iPad 連點：一組 PIN 只應該換到一組配對碼／裝置 token，
+  // 連點會產生多組互相取代、互相失效的配對碼。
+  if (submitBtn.disabled) return;
+  submitBtn.disabled = true;
+  try {
+    const childId = currentChild;
+    const pin = document.getElementById('pet-setup-pin-input').value;
+    const errEl = document.getElementById('pet-setup-pin-err');
+    const inputEl = document.getElementById('pet-setup-pin-input');
+    errEl.textContent = '';
 
-  const adminRes = await callPhase2A('issueAdminToken', { pin });
-  if (!adminRes.ok) {
-    if (adminRes.error === 'network_error') { showToast('⚠️ 網路錯誤', 'error'); return; }
-    errEl.textContent = describePhase2AError_(adminRes);
-    inputEl.classList.add('shake');
-    inputEl.value = '';
-    setTimeout(() => inputEl.classList.remove('shake'), 500);
-    return;
+    const adminRes = await callPhase2A('issueAdminToken', { pin });
+    if (!adminRes.ok) {
+      if (adminRes.error === 'network_error') { showToast('⚠️ 網路錯誤', 'error'); return; }
+      errEl.textContent = describePhase2AError_(adminRes);
+      inputEl.classList.add('shake');
+      inputEl.value = '';
+      setTimeout(() => inputEl.classList.remove('shake'), 500);
+      return;
+    }
+
+    const pairRes = await callPhase2A('createPairingCode', { adminToken: adminRes.admin_token, childId });
+    if (!pairRes.ok) {
+      if (pairRes.error === 'network_error') { showToast('⚠️ 網路錯誤', 'error'); return; }
+      errEl.textContent = describePhase2AError_(pairRes);
+      return;
+    }
+
+    const exchRes = await callPhase2A('exchangePairingCode', { childId, pairingCode: pairRes.pairing_code, deviceLabel: '森林餐館裝置' });
+    if (!exchRes.ok) {
+      if (exchRes.error === 'network_error') { showToast('⚠️ 網路錯誤', 'error'); return; }
+      errEl.textContent = describePhase2AError_(exchRes);
+      return;
+    }
+
+    localStorage.setItem(petDeviceTokenKey(childId), exchRes.device_token);
+    document.getElementById('pet-setup-step-pin').style.display = 'none';
+    document.getElementById('pet-setup-step-name').style.display = '';
+    document.getElementById('pet-setup-name-input').value = '';
+    document.getElementById('pet-setup-name-err').textContent = '';
+  } finally {
+    submitBtn.disabled = false;
   }
-
-  const pairRes = await callPhase2A('createPairingCode', { adminToken: adminRes.admin_token, childId });
-  if (!pairRes.ok) {
-    if (pairRes.error === 'network_error') { showToast('⚠️ 網路錯誤', 'error'); return; }
-    errEl.textContent = describePhase2AError_(pairRes);
-    return;
-  }
-
-  const exchRes = await callPhase2A('exchangePairingCode', { childId, pairingCode: pairRes.pairing_code, deviceLabel: '森林餐館裝置' });
-  if (!exchRes.ok) {
-    if (exchRes.error === 'network_error') { showToast('⚠️ 網路錯誤', 'error'); return; }
-    errEl.textContent = describePhase2AError_(exchRes);
-    return;
-  }
-
-  localStorage.setItem(petDeviceTokenKey(childId), exchRes.device_token);
-  document.getElementById('pet-setup-step-pin').style.display = 'none';
-  document.getElementById('pet-setup-step-name').style.display = '';
-  document.getElementById('pet-setup-name-input').value = '';
-  document.getElementById('pet-setup-name-err').textContent = '';
 }
 
 async function submitPetSetupName() {
-  const childId = currentChild;
-  const nameInput = document.getElementById('pet-setup-name-input');
-  const errEl = document.getElementById('pet-setup-name-err');
-  const petName = nameInput.value.trim();
-  errEl.textContent = '';
+  const submitBtn = document.getElementById('pet-setup-name-submit-btn');
+  // busy 狀態防止 iPad 連點：避免同一次領養在網路還沒回應時被連點觸發多次 initializePet。
+  if (submitBtn.disabled) return;
+  submitBtn.disabled = true;
+  try {
+    const childId = currentChild;
+    const nameInput = document.getElementById('pet-setup-name-input');
+    const errEl = document.getElementById('pet-setup-name-err');
+    const petName = nameInput.value.trim();
+    errEl.textContent = '';
 
-  if (!isValidCanonicalPetNameClient_(petName)) {
-    errEl.textContent = '請輸入 1~12 個字的名字';
-    return;
+    if (!isValidCanonicalPetNameClient_(petName)) {
+      errEl.textContent = '請輸入 1~12 個字的名字';
+      return;
+    }
+
+    const deviceToken = localStorage.getItem(petDeviceTokenKey(childId));
+    if (!deviceToken) {
+      errEl.textContent = '設定資料遺失，請重新開始';
+      return;
+    }
+
+    // 冪等性：同一個孩子在完成（或放棄）這次設定精靈之前，重複使用同一個
+    // clientRequestId，不要每次呼叫都重新產生。
+    const clientRequestId = getPetSetupRequestId(childId);
+    let res = await callPhase2A('initializePet', { childId, deviceToken, clientRequestId, petName });
+
+    if (res.error === 'network_error') {
+      // 逾時／網路錯誤不能直接當失敗處理：後端可能其實已經成功寫入，只是回應
+      // 沒送達。用同一個 clientRequestId 查一次交易狀態，不要讓使用者再點一次
+      // 「完成領養」時換成新 ID、打出一個新的初始化請求（那樣會得到
+      // already_has_pet，但前端從沒收到過成功結果）。
+      const statusRes = await callPhase2A('getTransactionStatus', { deviceToken, clientRequestId });
+      if (statusRes.ok && statusRes.status === 'success' && statusRes.result) {
+        res = { ok: true, result: statusRes.result };
+      } else if (statusRes.ok && statusRes.status === 'processing') {
+        showToast('⚠️ 還在處理中，請稍後再點一次「完成領養」', 'warn');
+        return; // 保留同一個 pending clientRequestId，下次點擊沿用
+      } else {
+        showToast('⚠️ 網路錯誤，請稍後再試一次', 'error');
+        return; // 保留同一個 pending clientRequestId，下次點擊沿用
+      }
+    }
+
+    if (!res.ok) {
+      errEl.textContent = describePhase2AError_(res);
+      // 明確的業務錯誤（非網路問題）代表這個 clientRequestId 已經跟後端「用掉」了，
+      // 不該再重用，讓使用者重新開始會產生一個乾淨的新 ID。
+      clearPetSetupRequestId(childId);
+      return;
+    }
+
+    const s = getPetState(childId);
+    s.pet_id = res.result.pet_id;
+    s.species = res.result.species;
+    s.pet_name = res.result.pet_name;
+    savePetState(childId, s);
+    localStorage.setItem(petAdoptedKey(childId), 'true');
+    localStorage.setItem(petPhase2ADoneKey(childId), 'true');
+    clearPetSetupRequestId(childId);
+
+    closePetSetup();
+    showToast(`🎉 恭喜你領養了 ${res.result.pet_name}！`, 'success');
+    renderForestPet(allData[currentChild]);
+  } finally {
+    submitBtn.disabled = false;
   }
-
-  const deviceToken = localStorage.getItem(petDeviceTokenKey(childId));
-  if (!deviceToken) {
-    errEl.textContent = '設定資料遺失，請重新開始';
-    return;
-  }
-
-  const clientRequestId = 'petsetup-' + childId + '-' + Date.now() + '-' + Math.random().toString(36).slice(2);
-  const res = await callPhase2A('initializePet', { childId, deviceToken, clientRequestId, petName });
-
-  if (res.error === 'network_error') { showToast('⚠️ 網路錯誤', 'error'); return; }
-  if (!res.ok) {
-    errEl.textContent = describePhase2AError_(res);
-    return;
-  }
-
-  const s = getPetState(childId);
-  s.pet_id = res.result.pet_id;
-  s.species = res.result.species;
-  s.pet_name = res.result.pet_name;
-  savePetState(childId, s);
-  localStorage.setItem(petAdoptedKey(childId), 'true');
-
-  closePetSetup();
-  showToast(`🎉 恭喜你領養了 ${res.result.pet_name}！`, 'success');
-  renderForestPet(allData[currentChild]);
 }
 
 function declinePet() {
@@ -2345,6 +2443,24 @@ function renderForestPet(data) {
     return;
   }
 
+  // 舊版（Phase 2A 上線前）本機模擬領養只會設定 forest_pet_adopted_<childId>，
+  // 從來沒有機會接上真正的 initializePet。這些孩子的 isPetAdopted 是 true，
+  // 但 isPetPhase2ADone 是 false——之前完全沒有畫面會再顯示設定入口，孩子/媽媽
+  // 永遠看不到取名字的地方。這裡補上一次性的「完成設定」入口。
+  if (!isPetPhase2ADone(childId)) {
+    el.innerHTML = `
+      <div class="pet-encounter">
+        <div class="pet-encounter-portrait">
+          <img src="img/pet/cat_portrait.png" alt="貓咪">
+        </div>
+        <div class="pet-encounter-text">你已經有一隻毛孩子了，但牠好像還沒有正式的名字～<br>要現在幫牠完成設定、取個名字嗎？</div>
+        <div class="pet-encounter-actions">
+          <button class="pet-adopt-btn" onclick="openPetSetup()">📝 幫牠取名字／完成設定</button>
+        </div>
+      </div>`;
+    return;
+  }
+
   // 已領養：主畫面只在還沒建立過時才整個重畫，避免每次摸摸/餵食都讓走路動畫重新從頭播放
   const firstBuild = !document.getElementById('pet-room');
   if (firstBuild) {
@@ -2367,12 +2483,14 @@ function renderForestPet(data) {
             </div>
           </div>
         </div>
+        <div class="pet-room-name" id="pet-room-name"></div>
         <div class="pet-room-status" id="pet-room-status">點點貓咪，可以摸摸或餵食牠喔！</div>
       </div>
 
       <div class="pet-zoom-modal" id="pet-zoom-modal">
         <div class="pet-zoom-panel">
           <button class="pet-zoom-close" onclick="closePetZoom()">✕</button>
+          <div class="pet-name-label" id="pet-zoom-name"></div>
           <div class="pet-stage" id="pet-stage" onclick="petTouch()">
             <img class="pet-portrait" id="pet-portrait" src="img/pet/cat_portrait.png" alt="貓咪">
           </div>
@@ -2560,6 +2678,13 @@ function updatePetStatsUI() {
   const stageInfo = petStageInfoForExp(s.exp_points);
   s.stage = stageInfo.stage;
   savePetState(childId, s);
+
+  // 名字要持續顯示在寵物室，不能只出現在領養那一刻的 toast。純文字用
+  // textContent 寫入，不走 innerHTML，避免任何 XSS 路徑。
+  const roomNameEl = document.getElementById('pet-room-name');
+  if (roomNameEl) roomNameEl.textContent = s.pet_name || '';
+  const zoomNameEl = document.getElementById('pet-zoom-name');
+  if (zoomNameEl) zoomNameEl.textContent = s.pet_name || '';
 
   const idx = PET_STAGES.indexOf(stageInfo);
   const nextStage = PET_STAGES[idx + 1];
