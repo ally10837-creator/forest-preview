@@ -349,7 +349,6 @@ body {
   position: absolute; z-index: 2; left: 50%; top: 60px; width: 210px; height: 150px;
   transform: translateX(-50%);
 }
-.tree-catcher { position: absolute; z-index: 4; left: calc(50% + 65px); bottom: 26px; font-size: 38px; transform-origin: center bottom; }
 .tree-fruit {
   position: absolute; width: 44px; height: 44px; border: none; background-color: transparent;
   background-size: contain; background-repeat: no-repeat; background-position: center;
@@ -368,8 +367,6 @@ body {
 .tree-animation-fruit { position: absolute; z-index: 8; left: 50%; top: 74px; font-size: 38px; transform: translateX(-50%); }
 .tree-animation-fruit.falling { animation: treeFruitFall .55s ease-in forwards; }
 @keyframes treeFruitFall { to { transform: translate(58px, 130px) rotate(190deg); } }
-.tree-catcher.catching { animation: treePetCatch .35s ease-out; }
-@keyframes treePetCatch { 50% { transform: translateY(-14px) scale(1.08); } }
 .tree-particle { position:absolute; z-index:9; left:50%; top:72%; pointer-events:none; animation:treeParticle .55s ease-out forwards; }
 @keyframes treeParticle { to { transform:translate(var(--tx),var(--ty)) rotate(120deg); opacity:0; } }
 .tree-status { min-height: 42px; text-align: center; color: var(--cocoa-soft); font-size: 13px; line-height: 1.55; }
@@ -390,7 +387,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .tree-fruit, .tree-card.tree-shaking .tree-crown, .tree-animation-fruit.falling,
-  .tree-catcher.catching, .tree-particle { animation: none !important; transition: none !important; }
+  .tree-particle { animation: none !important; transition: none !important; }
 }
 
 /* ── CHORE LIST ── */
@@ -2817,7 +2814,6 @@ function cleanupTreeRewardAnimation_() {
   _treeAnimationTimers.forEach(clearTimeout); _treeAnimationTimers = [];
   document.querySelectorAll('.tree-animation-fruit,.tree-particle').forEach(el => el.remove());
   document.getElementById('tree-card')?.classList.remove('tree-shaking');
-  document.getElementById('tree-catcher')?.classList.remove('catching');
 }
 function waitTreeStep_(ms) {
   const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -2828,12 +2824,10 @@ async function playTreeRewardSequence_() {
   cleanupTreeRewardAnimation_();
   const card = document.getElementById('tree-card');
   const scene = document.getElementById('tree-scene');
-  const catcher = document.getElementById('tree-catcher');
   if (!card || !scene) return;
   card.classList.add('tree-shaking'); await waitTreeStep_(220);
   const fruit = document.createElement('div'); fruit.className = 'tree-animation-fruit'; fruit.textContent = '🍊'; scene.appendChild(fruit);
-  fruit.classList.add('falling'); await waitTreeStep_(240);
-  catcher?.classList.add('catching'); await waitTreeStep_(180);
+  fruit.classList.add('falling'); await waitTreeStep_(240 + 180);
   const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (!document.hidden && !reduced) {
     ['✨','🍃','⭐','🎉','🍃','✨'].forEach((symbol, i) => {
@@ -2875,12 +2869,11 @@ function renderTreeSection_(childId, cachedOnly) {
     actions = `<button class="tree-action-btn secondary" onclick="refreshTreeStatus_('${childId}',{reason:'tree-initial'})">更新驚喜樹</button>`;
   }
   const fruitHtml = fruits.map((f, index) => {
-    const left = 18 + (index % 5) * 38;
-    const top = 12 + Math.floor(index / 5) * 42;
+    const slot = TREE_FRUIT_SLOTS_[index % TREE_FRUIT_SLOTS_.length];
     const color = treeFruitColorVariant_(f.fruit_id);
-    return `<button class="tree-fruit tree-fruit-${color}" style="left:${left}px;top:${top}px" aria-label="打開成熟果實" ${disabled ? 'disabled' : ''} onclick="openTreeFruit_('${f.fruit_id}')"></button>`;
+    return `<button class="tree-fruit tree-fruit-${color}" style="left:${slot.left}px;top:${slot.top}px" aria-label="打開成熟果實" ${disabled ? 'disabled' : ''} onclick="openTreeFruit_('${f.fruit_id}')"></button>`;
   }).join('');
-  return `<div class="tree-card" id="tree-card"><div class="tree-title">🌳 驚喜樹</div><div class="tree-scene" id="tree-scene"><img class="tree-scene-img" src="img/pet/tree_scene.png" alt=""><div class="tree-fruit-layer">${fruitHtml}</div><div class="tree-catcher" id="tree-catcher">🐱</div></div><div class="tree-status">${status}</div><div class="tree-actions">${actions}</div></div>`;
+  return `<div class="tree-card" id="tree-card"><div class="tree-title">🌳 驚喜樹</div><div class="tree-scene" id="tree-scene"><img class="tree-scene-img" src="img/pet/tree_scene.png" alt=""><div class="tree-fruit-layer">${fruitHtml}</div></div><div class="tree-status">${status}</div><div class="tree-actions">${actions}</div></div>`;
 }
 
 // 純視覺隨機：同一顆果實（同一個 fruit_id）每次重新渲染都固定同一個顏色，不會閃爍；
@@ -2890,6 +2883,19 @@ function treeFruitColorVariant_(fruitId) {
   for (let i = 0; i < fruitId.length; i++) hash = (hash * 31 + fruitId.charCodeAt(i)) >>> 0;
   return hash % 2 === 0 ? 'orange' : 'purple';
 }
+
+// 果實在樹冠內的固定版位（像素座標，相對 .tree-fruit-layer 左上角）。
+// 每個座標都用 tree_scene.png 實際透明度逐格量測過，確保 44x44 的果實範圍
+// 幾乎完全落在不透明的樹冠內，不會超出邊緣；版位刻意不規則排列，避免排成一直線。
+const TREE_FRUIT_SLOTS_ = [
+  { left: 34, top: 0 },
+  { left: 132, top: 0 },
+  { left: 84, top: 24 },
+  { left: 154, top: 48 },
+  { left: 14, top: 50 },
+  { left: 58, top: 58 },
+  { left: 112, top: 58 },
+];
 
 function renderForestPet(data) {
   const el = document.getElementById('forestpet-content');
