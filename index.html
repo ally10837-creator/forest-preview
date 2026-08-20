@@ -205,6 +205,25 @@ body {
 @keyframes petIdleFrameA { 0%,49% { opacity: 1; } 50%,100% { opacity: 0; } }
 @keyframes petIdleFrameB { 0%,49% { opacity: 0; } 50%,100% { opacity: 1; } }
 .pet-room-static { display: block; width: 100%; height: 100%; object-fit: contain; }
+/* 配件疊圖：位置／寬度用 JS 依 accessory_pose_manifest.json 的百分比算出來後用行內樣式設定，
+   這裡只負責「跟哪張底圖共用同一組淡出動畫」與基本 absolute 定位，不預設任何 width/height 100%，
+   避免蓋掉 JS 算好的實際尺寸。rear 配件（目前只有彩虹翅膀）z-index 比貓咪底圖低，畫在後面。 */
+.pet-accessory-overlay { position: absolute; pointer-events: none; display: none; }
+.pet-accessory-overlay.layer-front { z-index: 3; }
+.pet-accessory-overlay.layer-rear { z-index: 1; }
+.pet-room-frame.pet-accessory-overlay.frame-a,
+.pet-room-idle-frame.pet-accessory-overlay.frame-a { animation: petFrameA 0.5s steps(1) infinite; }
+.pet-room-frame.pet-accessory-overlay.frame-b,
+.pet-room-idle-frame.pet-accessory-overlay.frame-b { animation: petFrameB 0.5s steps(1) infinite; }
+.pet-room-idleframes .pet-accessory-overlay.frame-a { animation-name: petIdleFrameA; animation-duration: 2.8s; }
+.pet-room-idleframes .pet-accessory-overlay.frame-b { animation-name: petIdleFrameB; animation-duration: 2.8s; }
+.pet-room-frame:not(.pet-accessory-overlay), .pet-room-idle-frame:not(.pet-accessory-overlay) { z-index: 2; }
+#pet-room-static { position: relative; z-index: 2; }
+/* TEST_ONLY：這個下拉選單跟它的樣式只是給覆核/測試用，不是正式功能。
+   JS 端 TEST_ONLY_applyHostGuard_() 會在非 localhost / forest-preview 網域時
+   強制把 #TEST_ONLY_accessory_select_block 設回 display:none，這裡的 CSS
+   只負責平常看起來正常，不是唯一的隱藏機制。 */
+.TEST_ONLY_accessory_select { font-size: 11px; margin: 4px 16px 0; display: block; width: calc(100% - 32px); }
 @keyframes petWalkBob {
   0%, 100% { transform: translateY(0) rotate(0deg); }
   25%      { transform: translateY(-3px) rotate(-3deg); }
@@ -2921,7 +2940,11 @@ function renderForestPet(data) {
     return;
   }
   stopPetRoom();
-  el.innerHTML = `<div class="pet-room-outer"><div class="pet-room" id="pet-room"><div class="pet-room-wrap" id="pet-room-wrap" onclick="openPetZoom()"><div class="pet-room-flip" id="pet-room-flip"><div class="pet-room-sprite" id="pet-room-sprite"><div class="pet-room-walkframes" id="pet-room-walkframes"><img class="pet-room-frame frame-a" src="img/pet/cat_walk_a.png" alt=""><img class="pet-room-frame frame-b" src="img/pet/cat_walk_b.png" alt=""></div><div class="pet-room-idleframes" id="pet-room-idleframes"><img class="pet-room-idle-frame frame-a" src="img/pet/cat_idle_left.png" alt=""><img class="pet-room-idle-frame frame-b" src="img/pet/cat_idle_right.png" alt=""></div><img class="pet-room-static" id="pet-room-static" src="img/pet/cat_portrait.png" alt="貓咪"></div></div></div></div><div class="pet-room-name" id="pet-room-name"></div><div class="pet-room-status" id="pet-room-status">點點貓咪，可以摸摸牠喔！</div></div><div class="pet-zoom-modal" id="pet-zoom-modal"><div class="pet-zoom-panel"><button class="pet-zoom-close" onclick="closePetZoom()">✕</button><div class="pet-name-label" id="pet-zoom-name"></div><div class="pet-stage" id="pet-stage" onclick="petTouch()"><img class="pet-portrait" id="pet-portrait" src="img/pet/cat_portrait.png" alt="貓咪"></div><div class="pet-hint" id="pet-hint">摸摸貓咪，牠會很開心！</div><div class="section-title" style="padding-top:0;">🎒 後端背包</div><div class="pet-food-grid" id="pet-food-grid"></div><div style="padding:0 12px 12px;"><button class="pet-bath-btn" id="pet-bath-btn" onclick="petBath()">🛁 幫貓咪洗香香（純動畫）</button></div></div></div>${renderTreeSection_(childId, classified.kind !== 'present')}`;
+  el.innerHTML = `<div class="pet-room-outer"><div class="pet-room" id="pet-room"><div class="pet-room-wrap" id="pet-room-wrap" onclick="openPetZoom()"><div class="pet-room-flip" id="pet-room-flip"><div class="pet-room-sprite" id="pet-room-sprite"><div class="pet-room-walkframes" id="pet-room-walkframes"><img class="pet-room-frame frame-a" src="img/pet/cat_walk_a.png" alt=""><img class="pet-room-frame pet-accessory-overlay frame-a" id="pet-room-walk-acc-a" alt=""><img class="pet-room-frame frame-b" src="img/pet/cat_walk_b.png" alt=""><img class="pet-room-frame pet-accessory-overlay frame-b" id="pet-room-walk-acc-b" alt=""></div><div class="pet-room-idleframes" id="pet-room-idleframes"><img class="pet-room-idle-frame frame-a" src="img/pet/cat_idle_left.png" alt=""><img class="pet-room-idle-frame pet-accessory-overlay frame-a" id="pet-room-idle-acc-a" alt=""><img class="pet-room-idle-frame frame-b" src="img/pet/cat_idle_right.png" alt=""><img class="pet-room-idle-frame pet-accessory-overlay frame-b" id="pet-room-idle-acc-b" alt=""></div><img class="pet-room-static" id="pet-room-static" src="img/pet/cat_portrait.png" alt="貓咪"><img class="pet-accessory-overlay" id="pet-room-static-acc" alt=""></div></div></div></div><div class="pet-room-name" id="pet-room-name"></div><div class="pet-room-status" id="pet-room-status">點點貓咪，可以摸摸牠喔！</div><!-- TEST_ONLY_BEGIN：以下這個區塊只給部署前覆核／本機測試用，不是正式功能。
+     若這段 HTML 被整份複製到 forest（正式站）repo，TEST_ONLY_applyHostGuard_()
+     會在非 localhost / forest-preview 網域時把這個區塊強制 display:none，
+     且 TEST_ONLY_setAccessory_() 本體也會拒絕在不允許的網域上生效（雙重防護，
+     不只靠隱藏）。上正式站前仍建議直接刪除整個 TEST_ONLY_BEGIN/END 區塊。 --><div id="TEST_ONLY_accessory_select_block"><select class="TEST_ONLY_accessory_select" id="TEST_ONLY_accessory_select" onclick="event.stopPropagation()" onchange="event.stopPropagation(); TEST_ONLY_setAccessory_(this.value)"><option value="">（測試用：不穿戴配件）</option><option value="leaf_clip">葉子髮夾</option><option value="star_bow">星星蝴蝶結</option><option value="forest_hat">森林小帽</option><option value="fairy_crown">精靈皇冠</option><option value="acorn_bell">橡果鈴鐺</option><option value="daisy_collar">小花項圈</option><option value="berry_bandana">藍莓領巾</option><option value="moon_charm">月亮吊飾</option><option value="magic_scarf">魔法圍巾</option><option value="rainbow_wings">彩虹翅膀</option></select></div><!-- TEST_ONLY_END --><div class="pet-zoom-modal" id="pet-zoom-modal"><div class="pet-zoom-panel"><button class="pet-zoom-close" onclick="closePetZoom()">✕</button><div class="pet-name-label" id="pet-zoom-name"></div><div class="pet-stage" id="pet-stage" onclick="petTouch()"><img class="pet-portrait" id="pet-portrait" src="img/pet/cat_portrait.png" alt="貓咪"></div><div class="pet-hint" id="pet-hint">摸摸貓咪，牠會很開心！</div><div class="section-title" style="padding-top:0;">🎒 後端背包</div><div class="pet-food-grid" id="pet-food-grid"></div><div style="padding:0 12px 12px;"><button class="pet-bath-btn" id="pet-bath-btn" onclick="petBath()">🛁 幫貓咪洗香香（純動畫）</button></div></div></div>${renderTreeSection_(childId, classified.kind !== 'present')}`;
   document.getElementById('pet-room-name').textContent = pet.pet_name;
   document.getElementById('pet-zoom-name').textContent = pet.pet_name;
   renderPetFood();
@@ -2956,6 +2979,15 @@ function petRoomEls() {
     walkFrames: document.getElementById('pet-room-walkframes'),
     idleFrames: document.getElementById('pet-room-idleframes'),
     staticImg: document.getElementById('pet-room-static'),
+    walkA: document.querySelector('#pet-room-walkframes img.frame-a:not(.pet-accessory-overlay)'),
+    walkB: document.querySelector('#pet-room-walkframes img.frame-b:not(.pet-accessory-overlay)'),
+    idleA: document.querySelector('#pet-room-idleframes img.frame-a:not(.pet-accessory-overlay)'),
+    idleB: document.querySelector('#pet-room-idleframes img.frame-b:not(.pet-accessory-overlay)'),
+    walkAccA: document.getElementById('pet-room-walk-acc-a'),
+    walkAccB: document.getElementById('pet-room-walk-acc-b'),
+    idleAccA: document.getElementById('pet-room-idle-acc-a'),
+    idleAccB: document.getElementById('pet-room-idle-acc-b'),
+    staticAcc: document.getElementById('pet-room-static-acc'),
   };
 }
 
@@ -2975,6 +3007,7 @@ function setRoomStatus(text) {
 
 function startPetRoom() {
   stopPetRoom();
+  TEST_ONLY_applyHostGuard_(); // 每次房間重新渲染都重新判定一次網域，不能只判定一次就假設不變
   petRoomTick();
   petRoomBlinkTimer = setInterval(petRoomMaybeBlink, 2600);
 }
@@ -2996,6 +3029,7 @@ function petRoomTick() {
   els.staticImg.style.transform = '';
   els.staticImg.src = CAT_PORTRAIT_NEUTRAL;
   els.idleFrames.style.display = 'none';
+  resetAccessoryFrames_(els);
 
   const roll = Math.random();
   let state, duration;
@@ -3062,6 +3096,7 @@ function petRoomTick() {
     setRoomStatus('貓咪睡著了，呼呼～');
   }
 
+  applyAccessoryForState_(els, state);
   petRoomTimer = setTimeout(petRoomTick, duration * 1000);
 }
 
@@ -3122,6 +3157,131 @@ function spawnPetHearts() {
     h.style.left = (46 + Math.random() * 8) + '%';
     stage.appendChild(h);
     setTimeout(() => h.remove(), 900);
+  }
+}
+
+// ══════════════════════════════════════════════
+// 配件疊圖資料（來自 forest_cafe_accessories_final_v18_20260820 定版交接包，
+// accessory_pose_manifest.json 與 POSE_SPECIFIC_MAP.json 原樣內嵌，未修改任何座標/清單）。
+// 目前只接到「小屋房間視圖」（sitting/grooming/sleeping/walking/idle），
+// 放大視窗維持現狀不變。equipped 配件先用測試用下拉選單手動指定，
+// 尚未串接 getPetEconomyData 的 equipped_accessory_id（之後接真資料只需
+// 把 TEST_ONLY_setAccessory_ 的呼叫來源換成 API 回傳值，渲染邏輯不用重寫）。
+// ══════════════════════════════════════════════
+const ACCESSORY_MANIFEST = {"coordinate_system":"percent_of_natural_image_canvas","hidden_states":["bath"],"accessories":{"leaf_clip":{"layer":"front","poses":{"portrait":{"left_pct":71.65,"top_pct":5.68,"width_pct":23.05,"mirror_x":false},"portrait_blink":{"left_pct":71.39,"top_pct":5.29,"width_pct":23.19,"mirror_x":false},"eating":{"left_pct":72.13,"top_pct":5.26,"width_pct":23.69,"mirror_x":false},"happy":{"left_pct":71.48,"top_pct":5.26,"width_pct":24.55,"mirror_x":false},"groom":{"left_pct":56.80,"top_pct":17.60,"width_pct":19.02,"mirror_x":false},"sleep":{"left_pct":37.00,"top_pct":4.60,"width_pct":18.00,"mirror_x":false},"idle_left":{"left_pct":69.00,"top_pct":17.00,"width_pct":21.88,"mirror_x":false},"idle_right":{"left_pct":75.60,"top_pct":19.10,"width_pct":21.88,"mirror_x":true},"walk_a":{"left_pct":21.00,"top_pct":2.00,"width_pct":17.00,"mirror_x":true},"walk_b":{"left_pct":21.50,"top_pct":2.00,"width_pct":17.00,"mirror_x":true}}},"star_bow":{"layer":"front","poses":{"portrait":{"left_pct":48.99,"top_pct":2.73,"width_pct":43.75},"portrait_blink":{"left_pct":49.19,"top_pct":2.73,"width_pct":43.75},"eating":{"left_pct":49.33,"top_pct":2.85,"width_pct":44.06},"happy":{"left_pct":49.02,"top_pct":2.73,"width_pct":43.78},"groom":{"left_pct":41.00,"top_pct":10.53,"width_pct":36.61},"sleep":{"left_pct":33.00,"top_pct":3.00,"width_pct":35.00},"idle_left":{"left_pct":49.48,"top_pct":10.64,"width_pct":44.19},"idle_right":{"left_pct":64.34,"top_pct":10.63,"width_pct":44.02},"walk_a":{"left_pct":30.17,"top_pct":2.51,"width_pct":26.95},"walk_b":{"left_pct":30.17,"top_pct":2.53,"width_pct":26.95}}},"forest_hat":{"layer":"front","allow_overflow":true,"poses":{"portrait":{"left_pct":16.24,"top_pct":-4.02,"width_pct":48.42},"portrait_blink":{"left_pct":16.44,"top_pct":-4.02,"width_pct":48.42},"eating":{"left_pct":16.35,"top_pct":-4.19,"width_pct":48.76},"happy":{"left_pct":16.25,"top_pct":-4.02,"width_pct":48.45},"groom":{"left_pct":13.59,"top_pct":4.59,"width_pct":40.52},"sleep":{"left_pct":10.00,"top_pct":-4.00,"width_pct":39.00},"idle_left":{"left_pct":16.40,"top_pct":4.43,"width_pct":48.90},"idle_right":{"left_pct":31.39,"top_pct":4.44,"width_pct":48.72},"walk_a":{"left_pct":10.00,"top_pct":-3.69,"width_pct":29.82},"walk_b":{"left_pct":10.00,"top_pct":-3.73,"width_pct":29.82}}},"fairy_crown":{"layer":"front","allow_overflow":true,"poses":{"portrait":{"left_pct":-3.95,"top_pct":2.80,"width_pct":92.94},"portrait_blink":{"left_pct":-3.75,"top_pct":2.80,"width_pct":92.94},"eating":{"left_pct":-3.98,"top_pct":2.92,"width_pct":93.59},"happy":{"left_pct":-3.95,"top_pct":2.80,"width_pct":93.00},"groom":{"left_pct":-3.31,"top_pct":10.59,"width_pct":77.78},"sleep":{"left_pct":-3.00,"top_pct":3.00,"width_pct":68.00},"idle_left":{"left_pct":-3.99,"top_pct":10.70,"width_pct":93.87},"idle_right":{"left_pct":11.07,"top_pct":10.69,"width_pct":93.52},"walk_a":{"left_pct":-2.43,"top_pct":2.57,"width_pct":57.25},"walk_b":{"left_pct":-2.43,"top_pct":2.60,"width_pct":57.25}}},"acorn_bell":{"layer":"front","poses":{"portrait":{"left_pct":17.94,"top_pct":56.05,"width_pct":48.44},"portrait_blink":{"left_pct":18.14,"top_pct":56.05,"width_pct":48.44},"eating":{"left_pct":18.07,"top_pct":58.43,"width_pct":48.78},"happy":{"left_pct":17.95,"top_pct":56.04,"width_pct":48.47},"groom":{"left_pct":15.01,"top_pct":57.42,"width_pct":40.54},"sleep":{"left_pct":46.00,"top_pct":55.00,"width_pct":28.00},"idle_left":{"left_pct":18.12,"top_pct":59.69,"width_pct":48.92},"idle_right":{"left_pct":33.10,"top_pct":59.50,"width_pct":48.74},"walk_a":{"left_pct":11.05,"top_pct":51.44,"width_pct":29.84},"walk_b":{"left_pct":11.05,"top_pct":52.00,"width_pct":29.84}}},"daisy_collar":{"layer":"front","poses":{"portrait":{"left_pct":8.20,"top_pct":52.17,"width_pct":69.68},"portrait_blink":{"left_pct":8.40,"top_pct":52.17,"width_pct":69.68},"eating":{"left_pct":8.26,"top_pct":54.39,"width_pct":70.17},"happy":{"left_pct":8.21,"top_pct":52.16,"width_pct":69.72},"groom":{"left_pct":6.86,"top_pct":54.01,"width_pct":58.31},"sleep":{"left_pct":43.00,"top_pct":57.00,"width_pct":35.00},"idle_left":{"left_pct":8.28,"top_pct":56.12,"width_pct":70.38},"idle_right":{"left_pct":23.30,"top_pct":55.95,"width_pct":70.12},"walk_a":{"left_pct":5.05,"top_pct":47.88,"width_pct":42.92},"walk_b":{"left_pct":5.05,"top_pct":48.40,"width_pct":42.92}}},"berry_bandana":{"layer":"front","poses":{"portrait":{"left_pct":13.70,"top_pct":52.05,"width_pct":67.60},"portrait_blink":{"left_pct":13.90,"top_pct":52.05,"width_pct":67.60},"eating":{"left_pct":13.80,"top_pct":54.26,"width_pct":68.08},"happy":{"left_pct":13.71,"top_pct":52.04,"width_pct":67.64},"groom":{"left_pct":11.47,"top_pct":53.90,"width_pct":56.57},"sleep":{"left_pct":47.00,"top_pct":58.00,"width_pct":32.00},"idle_left":{"left_pct":13.84,"top_pct":56.01,"width_pct":68.27},"idle_right":{"left_pct":28.83,"top_pct":55.84,"width_pct":68.02},"walk_a":{"left_pct":8.44,"top_pct":47.77,"width_pct":41.64},"walk_b":{"left_pct":8.44,"top_pct":48.29,"width_pct":41.64}}},"moon_charm":{"layer":"front","poses":{"portrait":{"left_pct":12.45,"top_pct":54.33,"width_pct":60.31},"portrait_blink":{"left_pct":12.65,"top_pct":54.33,"width_pct":60.31},"eating":{"left_pct":12.54,"top_pct":56.64,"width_pct":60.73},"happy":{"left_pct":12.46,"top_pct":54.32,"width_pct":60.35},"groom":{"left_pct":10.42,"top_pct":55.91,"width_pct":50.47},"sleep":{"left_pct":48.00,"top_pct":58.00,"width_pct":30.00},"idle_left":{"left_pct":12.57,"top_pct":58.11,"width_pct":60.91},"idle_right":{"left_pct":27.58,"top_pct":57.93,"width_pct":60.69},"walk_a":{"left_pct":7.67,"top_pct":49.86,"width_pct":37.15},"walk_b":{"left_pct":7.67,"top_pct":50.41,"width_pct":37.15}}},"magic_scarf":{"layer":"front","poses":{"portrait":{"left_pct":9.03,"top_pct":52.05,"width_pct":90.65},"portrait_blink":{"left_pct":9.23,"top_pct":52.05,"width_pct":90.65},"eating":{"left_pct":9.09,"top_pct":54.26,"width_pct":91.29},"happy":{"left_pct":9.04,"top_pct":52.04,"width_pct":90.71},"groom":{"left_pct":7.56,"top_pct":53.90,"width_pct":75.86},"sleep":{"left_pct":45.00,"top_pct":57.00,"width_pct":36.00},"idle_left":{"left_pct":9.12,"top_pct":56.01,"width_pct":91.55},"idle_right":{"left_pct":24.13,"top_pct":55.84,"width_pct":91.22},"walk_a":{"left_pct":5.56,"top_pct":47.77,"width_pct":55.84},"walk_b":{"left_pct":5.56,"top_pct":48.29,"width_pct":55.84}}},"rainbow_wings":{"layer":"rear","allow_overflow":true,"poses":{"portrait":{"left_pct":-33.30,"top_pct":18.30,"width_pct":147.50},"portrait_blink":{"left_pct":-33.10,"top_pct":18.30,"width_pct":147.50},"eating":{"left_pct":-33.53,"top_pct":19.08,"width_pct":148.54},"happy":{"left_pct":-33.32,"top_pct":18.30,"width_pct":147.59},"groom":{"left_pct":-27.87,"top_pct":24.22,"width_pct":123.44},"sleep":{"left_pct":-20.00,"top_pct":8.00,"width_pct":140.00},"idle_left":{"left_pct":-33.63,"top_pct":24.96,"width_pct":148.97},"idle_right":{"left_pct":-18.46,"top_pct":24.90,"width_pct":148.42},"walk_a":{"left_pct":-20.51,"top_pct":16.79,"width_pct":90.85},"walk_b":{"left_pct":-20.51,"top_pct":16.98,"width_pct":90.85}}}}};
+const POSE_SPECIFIC_MAP = {"version":"v18","bath_accessories_visible":false,"accessories":{"acorn_bell":["eating","groom","sleep"],"berry_bandana":["groom","sleep","walk_a","walk_b"],"daisy_collar":["groom","sleep","walk_a","walk_b"],"fairy_crown":["sleep","walk_a","walk_b"],"magic_scarf":["groom","sleep","walk_a","walk_b"],"moon_charm":["eating","groom","happy","idle_left","idle_right","portrait","portrait_blink","sleep","walk_a","walk_b"],"rainbow_wings":["sleep","walk_a","walk_b"]},"generic_overlay_only":["leaf_clip","star_bow","forest_hat"]};
+const ROOM_STATE_POSE_KEYS_ = { sitting: 'portrait', grooming: 'groom', sleeping: 'sleep' };
+// sitting/grooming/sleeping 各自唯一對應的「沒有配件時」原圖路徑，直接寫死對照表，
+// 不能用「讀目前 staticImg.src 字串反推」，因為上一輪如果是 pose_specific 全幀圖
+// （例如 pose_specific/magic_scarf/sleep.png），路徑裡沒有 img/pet/ 這個子字串，
+// indexOf 會回傳 -1，substring(-1) 在 JS 裡等於 substring(0)，整段舊路徑會被原封
+// 不動當成 fallback，導致貓咪卡在上一個配件的姿勢專用圖換不回來。
+const ROOM_STATE_BASE_SRC_ = { sitting: 'img/pet/cat_portrait.png', grooming: 'img/pet/cat_groom_v3.png', sleeping: 'img/pet/cat_sleep_v3.png' };
+let TEST_ONLY_equippedAccessoryId_ = '';
+
+// TEST_ONLY：網域防護——只允許本機測試（localhost/127.0.0.1/file://）或
+// forest-preview 的 GitHub Pages 網域啟用測試選單。就算這整段程式碼被誤搬到
+// forest（正式站）repo，這個檢查會在讀取當下的 location.hostname/pathname
+// 時自動判定不符合，selector 隱藏、TEST_ONLY_setAccessory_ 本體也直接拒絕生效——
+// 不是只靠「不要複製過去」這個人為約定。
+function TEST_ONLY_isAllowedHost_() {
+  var h = location.hostname;
+  var p = location.pathname;
+  if (h === 'localhost' || h === '127.0.0.1' || h === '') return true; // '' 涵蓋 file:// 本機開啟
+  if (h === 'ally10837-creator.github.io' && (p === '/forest-preview' || p.indexOf('/forest-preview/') === 0)) return true;
+  return false;
+}
+
+function TEST_ONLY_applyHostGuard_() {
+  var block = document.getElementById('TEST_ONLY_accessory_select_block');
+  var allowed = TEST_ONLY_isAllowedHost_();
+  if (block) block.style.display = allowed ? '' : 'none';
+  return allowed;
+}
+
+function TEST_ONLY_setAccessory_(accessoryId) {
+  if (!TEST_ONLY_applyHostGuard_()) {
+    TEST_ONLY_equippedAccessoryId_ = ''; // 非允許網域：強制不生效，不留殘值
+    return;
+  }
+  TEST_ONLY_equippedAccessoryId_ = accessoryId || '';
+  const els = petRoomEls();
+  if (els.room) applyAccessoryForState_(els, petRoomCurrentState);
+}
+
+function resetAccessoryFrames_(els) {
+  if (els.walkA) els.walkA.src = 'img/pet/cat_walk_a.png';
+  if (els.walkB) els.walkB.src = 'img/pet/cat_walk_b.png';
+  if (els.idleA) els.idleA.src = 'img/pet/cat_idle_left.png';
+  if (els.idleB) els.idleB.src = 'img/pet/cat_idle_right.png';
+  [els.walkAccA, els.walkAccB, els.idleAccA, els.idleAccB, els.staticAcc].forEach(function (el) {
+    if (el) { el.style.display = 'none'; el.removeAttribute('src'); }
+  });
+}
+
+// object-fit:contain 讓底圖等比縮放置中在容器內，可能有留白（letterbox）。
+// 配件座標是「相對於原始圖片畫布」的百分比，所以要先算出底圖實際畫出來的那個矩形，
+// 疊圖才會對準，不能直接假設底圖填滿整個容器。
+function computeContainRect_(container, imgEl) {
+  const cw = container.clientWidth, ch = container.clientHeight;
+  const nw = imgEl.naturalWidth, nh = imgEl.naturalHeight;
+  if (!cw || !ch || !nw || !nh) return { x: 0, y: 0, w: cw, h: ch };
+  const scale = Math.min(cw / nw, ch / nh);
+  const w = nw * scale, h = nh * scale;
+  return { x: (cw - w) / 2, y: (ch - h) / 2, w: w, h: h };
+}
+
+function applyOverlayToImg_(overlayImg, baseImg, poseKey, layerClass) {
+  const accessoryId = TEST_ONLY_equippedAccessoryId_;
+  if (!overlayImg || !baseImg) return;
+  if (!accessoryId || ACCESSORY_MANIFEST.hidden_states.indexOf(poseKey) !== -1) {
+    overlayImg.style.display = 'none';
+    return;
+  }
+  const accessory = ACCESSORY_MANIFEST.accessories[accessoryId];
+  const poseData = accessory && accessory.poses[poseKey];
+  if (!accessory || !poseData) { overlayImg.style.display = 'none'; return; }
+
+  const container = baseImg.parentElement;
+  const rect = computeContainRect_(container, baseImg);
+  overlayImg.classList.remove('layer-front', 'layer-rear');
+  overlayImg.classList.add(accessory.layer === 'rear' ? 'layer-rear' : 'layer-front');
+  overlayImg.src = 'img/pet/accessories/' + accessoryId + '.png';
+  overlayImg.style.left = (rect.x + poseData.left_pct / 100 * rect.w) + 'px';
+  overlayImg.style.top = (rect.y + poseData.top_pct / 100 * rect.h) + 'px';
+  overlayImg.style.width = (poseData.width_pct / 100 * rect.w) + 'px';
+  overlayImg.style.height = 'auto';
+  overlayImg.style.transform = poseData.mirror_x ? 'scaleX(-1)' : '';
+  overlayImg.style.transformOrigin = 'center';
+  overlayImg.style.display = 'block';
+}
+
+// pose_specific 全幀圖優先於一般透明疊圖（README_DEPLOYMENT.md 第 12 條、
+// POSE_SPECIFIC_MAP.json 的 priority_rule）：整張換成已經合成好貓咪+配件的圖，
+// 這種情況下疊圖要隱藏，不能疊兩次。
+function applyPoseSlot_(baseImg, overlayImg, poseKey, fallbackSrc) {
+  const accessoryId = TEST_ONLY_equippedAccessoryId_;
+  const specificList = accessoryId && POSE_SPECIFIC_MAP.accessories[accessoryId];
+  if (accessoryId && specificList && specificList.indexOf(poseKey) !== -1) {
+    baseImg.src = 'pose_specific/' + accessoryId + '/' + poseKey + '.png';
+    if (overlayImg) overlayImg.style.display = 'none';
+  } else {
+    baseImg.src = fallbackSrc;
+    applyOverlayToImg_(overlayImg, baseImg, poseKey, '');
+  }
+}
+
+function applyAccessoryForState_(els, state) {
+  if (state === 'walking') {
+    applyPoseSlot_(els.walkA, els.walkAccA, 'walk_a', 'img/pet/cat_walk_a.png');
+    applyPoseSlot_(els.walkB, els.walkAccB, 'walk_b', 'img/pet/cat_walk_b.png');
+  } else if (state === 'idle') {
+    applyPoseSlot_(els.idleA, els.idleAccA, 'idle_left', 'img/pet/cat_idle_left.png');
+    applyPoseSlot_(els.idleB, els.idleAccB, 'idle_right', 'img/pet/cat_idle_right.png');
+  } else {
+    const poseKey = ROOM_STATE_POSE_KEYS_[state];
+    if (!poseKey) return; // 未知狀態不動配件顯示
+    applyPoseSlot_(els.staticImg, els.staticAcc, poseKey, ROOM_STATE_BASE_SRC_[state]);
   }
 }
 
