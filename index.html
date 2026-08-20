@@ -224,6 +224,47 @@ body {
    強制把 #TEST_ONLY_accessory_select_block 設回 display:none，這裡的 CSS
    只負責平常看起來正常，不是唯一的隱藏機制。 */
 .TEST_ONLY_accessory_select { font-size: 11px; margin: 4px 16px 0; display: block; width: calc(100% - 32px); }
+/* ── 配件商店 ── */
+.pet-shop-btn {
+  width: calc(100% - 32px); margin: 8px 16px 0; background: var(--mango); color: var(--cocoa);
+  border: 2px solid var(--cocoa); border-radius: 10px; padding: 8px; font-family: inherit;
+  font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: var(--shadow-sm); transition: all 0.1s;
+}
+.pet-shop-btn:active { transform: translate(2px,2px); box-shadow: none; }
+.pet-shop-modal {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 810;
+  align-items: center; justify-content: center; padding: 20px;
+}
+.pet-shop-panel {
+  position: relative; background: var(--cream); border: 3px solid var(--cocoa); border-radius: 20px;
+  box-shadow: 5px 5px 0 var(--cocoa); max-width: 380px; width: 100%; max-height: 86vh; overflow-y: auto;
+  padding-bottom: 8px;
+}
+.pet-shop-close {
+  position: absolute; top: 10px; right: 10px; width: 32px; height: 32px; border-radius: 50%;
+  background: white; border: 2px solid var(--cocoa); font-size: 15px; font-weight: 700; cursor: pointer;
+  z-index: 2; box-shadow: var(--shadow-sm);
+}
+.pet-shop-title { font-size: 16px; font-weight: 700; color: var(--cocoa); text-align: center; padding: 16px 40px 4px; }
+.pet-shop-balance { font-size: 12px; color: var(--cocoa-soft); text-align: center; padding-bottom: 8px; }
+.pet-shop-list { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; }
+.pet-shop-card {
+  background: white; border: var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+}
+.pet-shop-emoji { font-size: 28px; width: 40px; text-align: center; flex-shrink: 0; }
+.pet-shop-body { flex: 1; min-width: 0; }
+.pet-shop-name { font-size: 14px; font-weight: 700; color: var(--cocoa); }
+.pet-shop-price { font-size: 11px; color: var(--cocoa-soft); margin-top: 2px; }
+.pet-shop-action-btn {
+  background: var(--mint); color: white; border: 2px solid var(--cocoa); border-radius: 10px;
+  padding: 6px 12px; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+  box-shadow: var(--shadow-sm); transition: all 0.1s; flex-shrink: 0; min-width: 64px;
+}
+.pet-shop-action-btn:active { transform: translate(2px,2px); box-shadow: none; }
+.pet-shop-action-btn:disabled { background: #ddd; color: #999; cursor: not-allowed; box-shadow: none; border-color: #ccc; }
+.pet-shop-action-btn.equipped { background: var(--mango); }
+.pet-shop-status { font-size: 12px; color: var(--cocoa-soft); text-align: center; padding: 8px 16px; min-height: 16px; }
 @keyframes petWalkBob {
   0%, 100% { transform: translateY(0) rotate(0deg); }
   25%      { transform: translateY(-3px) rotate(-3deg); }
@@ -1748,7 +1789,12 @@ const API = "https://script.google.com/macros/s/AKfycbwN5j0D9Js4cSW0NXJF6xBAUVQa
   // action 欄位，都視為非唯讀請求擋下）。
   const APPROVED_POST_ACTIONS = new Set([
     'issueAdminToken', 'createPairingCode', 'exchangePairingCode', 'initializePet', 'getTransactionStatus',
-    'getTreeStatus', 'openTreeReward'
+    'getTreeStatus', 'openTreeReward',
+    // 配件商店唯讀候選版核准（2026-08-20）：只加 getPetEconomyData，只讀取
+    // PetAccessoryCatalog／PetInventory／balance，不寫入。buyPetAccessory／
+    // equipPetAccessory 會扣代幣、建立交易、改庫存穿戴狀態，仍然沒有核准，
+    // 分別留給日後 Gate E（穿戴）／Gate B（購買）——不要在這裡自己加進來。
+    'getPetEconomyData'
   ]);
   let apiOrigin = '', apiPath = '';
   try { const apiUrl = new URL(API); apiOrigin = apiUrl.origin; apiPath = apiUrl.pathname; } catch (e) {}
@@ -2200,6 +2246,12 @@ async function switchChild(id) {
   invalidateTreeRequest_(previousChild);
   if (_petSetupSession) closePetSetup();
   currentChild = id;
+  // P1-1 修正：切換孩子當下立刻歸零配件真實狀態、關掉商店面板，不能留到
+  // onEnterForestPet_/refreshPetAccessoryEquipState_ 的非同步回應才清——不然
+  // 在小屋重新渲染的那一刻、以及等待新孩子 API 回應期間，畫面會短暫殘留上一位
+  // 孩子的配件（或直接沿用到新孩子身上）。
+  resetPetAccessoryEquipState_();
+  closePetShop();
   _contextBubbleProtectedUntil = 0; // 切換孩子時不沿用上一位孩子的情境泡泡保護，避免卡住舊的天氣／節日文字
   document.getElementById('tab-candice').className = 'child-tab' + (id==='candice'?' active-candice':'');
   document.getElementById('tab-harris').className  = 'child-tab' + (id==='harris' ?' active-harris':'');
@@ -2726,6 +2778,172 @@ function onEnterForestPet_() {
   if (classifyServerPet_(allData[childId]).kind === 'present' && localStorage.getItem(petDeviceTokenKey(childId))) {
     void refreshTreeStatus_(childId, { reason: 'enter-forest-pet' });
   }
+  // P1-1 修正：不能用「有 token」當作是否刷新配件狀態的前置條件——沒有 token
+  // 這件事本身要交給 refreshPetAccessoryEquipState_ 自己處理並歸零，不然沒
+  // token 的孩子會直接跳過整段，畫面繼續沿用切換孩子前殘留的舊 petAccessoryEquippedId_。
+  void refreshPetAccessoryEquipState_(childId);
+}
+
+// ══════════════════════════════════════════════
+// 配件商店（唯讀候選版，2026-08-20，P1 修正版）。
+// 範圍：只呼叫 getPetEconomyData（已核准，見上方 APPROVED_POST_ACTIONS）。
+// buyPetAccessory／equipPetAccessory 尚未核准，這版完全沒有任何程式路徑會呼叫
+// 到——不只是按鈕 disabled，連對應的函式本體都還沒寫。Gate E（穿戴）、Gate B
+// （購買／扣幣／重試冪等／交易核對）個別通過覆核後才會各自新增，屆時再獨立
+// 覆核那批新程式碼，不要在唯讀版裡先放進尚未審查的骨架，徒增審查面積。
+// 無 token／token 失效／讀取失敗／回應格式不合法時，一律視為「未穿戴」＋明確
+// 提示，不用快取或假資料冒充目前真的穿戴狀態。
+// ══════════════════════════════════════════════
+let petShopLastResult_ = null; // 最近一次通過驗證的 getPetEconomyData result，畫商店清單用
+
+function petShopErrorMessage_(res) {
+  if (res.error === 'network_error' || res.error === 'internal_error') return '網路結果不確定，請再試一次';
+  if (res.error === 'invalid_token') return '裝置連結已失效，請重新連結這台裝置';
+  if (res.error === 'unknown_child_id') return '找不到這個孩子的資料';
+  if (res.error === 'error_unsynced' || res.error === 'conflict') return '後端資料需要人工核對';
+  if (res.error === 'invalid_response_shape') return '後端回應格式異常，請聯絡管理員';
+  return '讀取失敗，請稍後再試';
+}
+
+// P1-2 修正：getPetEconomyData 是後端／Google Sheet 來源的資料，不能假設格式
+// 一定正確就直接拿去用——沒有這層檢查的話，accessories 不是陣列時 .map() 會
+// 直接拋例外，price_coins 不是數字時畫面會顯示奇怪的字串。任何一項不合法，
+// 整包視為失敗（fail-closed），不要「能顯示的先顯示、壞掉的跳過」，因為那樣
+// 使用者會看到不完整、可能誤導的配件清單。
+function validatePetEconomyResult_(result) {
+  if (!result || typeof result !== 'object') return false;
+  if (!Number.isSafeInteger(result.balance) || result.balance < 0) return false;
+  if (typeof result.blocked !== 'boolean') return false;
+  if (result.equipped_accessory_id !== null && typeof result.equipped_accessory_id !== 'string') return false;
+  if (!Array.isArray(result.accessories)) return false;
+
+  const seenIds = new Set();
+  const equippedIds = [];
+  for (const a of result.accessories) {
+    const shapeOk = a && typeof a === 'object' &&
+      typeof a.accessory_id === 'string' && a.accessory_id.length > 0 &&
+      typeof a.accessory_name === 'string' &&
+      typeof a.display_emoji === 'string' &&
+      Number.isInteger(a.price_coins) && a.price_coins >= 0 &&
+      typeof a.owned === 'boolean' && typeof a.equipped === 'boolean';
+    if (!shapeOk) return false;
+    if (seenIds.has(a.accessory_id)) return false; // 配件 ID 不得重複
+    seenIds.add(a.accessory_id);
+    if (a.equipped && !a.owned) return false; // 穿戴中的一定要是已擁有，不可能穿沒買過的配件
+    if (a.equipped) equippedIds.push(a.accessory_id);
+  }
+  if (equippedIds.length > 1) return false; // 清單裡最多只能有一件標成 equipped
+  const listEquippedId = equippedIds.length === 1 ? equippedIds[0] : null;
+  if (result.equipped_accessory_id !== listEquippedId) return false; // 頂層 equipped_accessory_id 必須跟清單裡標的那件一致
+  if (result.equipped_accessory_id !== null && !seenIds.has(result.equipped_accessory_id)) return false; // 必須是清單裡真的存在的配件 ID
+
+  return true;
+}
+
+// 讀取失敗／沒有 token／格式不合法時，把畫面狀態明確歸零成「未穿戴」，不留
+// 上一次（甚至上一位孩子）的殘值，避免使用者以為看到的是目前真的穿戴狀態。
+function resetPetAccessoryEquipState_() {
+  petShopLastResult_ = null;
+  petAccessoryEquippedId_ = '';
+  const els = petRoomEls();
+  if (els.room) applyAccessoryForState_(els, petRoomCurrentState);
+}
+
+async function refreshPetAccessoryEquipState_(childId) {
+  const token = localStorage.getItem(petDeviceTokenKey(childId));
+  if (!token) { if (currentChild === childId) resetPetAccessoryEquipState_(); return; }
+  const res = await callPhase2A('getPetEconomyData', { childId, deviceToken: token });
+  if (currentChild !== childId) return; // 使用者可能已經切換孩子，不要用舊資料覆蓋畫面
+  if (!res.ok || !validatePetEconomyResult_(res.result)) { resetPetAccessoryEquipState_(); return; }
+  petShopLastResult_ = res.result;
+  petAccessoryEquippedId_ = res.result.equipped_accessory_id || '';
+  const els = petRoomEls();
+  if (els.room) applyAccessoryForState_(els, petRoomCurrentState);
+}
+
+function openPetShop() {
+  document.getElementById('pet-shop-modal').style.display = 'flex';
+  void refreshPetShop_();
+}
+function closePetShop() {
+  // P0 修正：switchChild() 現在無條件呼叫這個函式，但 #pet-shop-modal 只有在
+  // renderForestPet() 執行過一次之後才存在。使用者從進站起如果都還沒進過
+  // 森林夥伴分頁就切孩子，getElementById 會回傳 null，直接讀 .style 會整個
+  // 拋例外、中斷 switchChild() 後面的流程（包含 loadAll()）——一定要判斷存在。
+  const modal = document.getElementById('pet-shop-modal');
+  if (!modal) return;
+  modal.style.display = 'none';
+}
+
+async function refreshPetShop_() {
+  const childId = currentChild;
+  const statusEl = document.getElementById('pet-shop-status');
+  const balanceEl = document.getElementById('pet-shop-balance');
+  const listEl = document.getElementById('pet-shop-list');
+  const token = localStorage.getItem(petDeviceTokenKey(childId));
+  if (!token) {
+    balanceEl.textContent = ''; listEl.innerHTML = '';
+    statusEl.textContent = '尚未連結這台裝置，無法讀取真實配件狀態。';
+    resetPetAccessoryEquipState_();
+    return;
+  }
+  statusEl.textContent = '載入中…';
+  const res = await callPhase2A('getPetEconomyData', { childId, deviceToken: token });
+  if (currentChild !== childId) return;
+  if (!res.ok || !validatePetEconomyResult_(res.result)) {
+    balanceEl.textContent = ''; listEl.innerHTML = '';
+    const reason = !res.ok ? petShopErrorMessage_(res) : petShopErrorMessage_({ error: 'invalid_response_shape' });
+    statusEl.textContent = '讀取失敗（' + reason + '），未顯示任何配件狀態，也不會假設目前穿了什麼。';
+    resetPetAccessoryEquipState_();
+    return;
+  }
+  petShopLastResult_ = res.result;
+  petAccessoryEquippedId_ = res.result.equipped_accessory_id || '';
+  const els = petRoomEls();
+  if (els.room) applyAccessoryForState_(els, petRoomCurrentState);
+  statusEl.textContent = res.result.blocked ? '⚠️ 後端目前有其他寵物交易處理中，購買／穿戴功能開放後也會先擋住。' : '';
+  renderPetShopList_(res.result);
+}
+
+// P1-2 修正：改用 DOM＋textContent 組卡片，不是 innerHTML 字串接資料——
+// accessory_name／display_emoji 這幾個欄位來自後端／Google Sheet，不是常數，
+// 用 textContent 賦值瀏覽器不會把內容當 HTML 解析，天生就不會有注入風險，
+// 不需要額外呼叫 escapeHtmlForRb() 再組字串。
+function renderPetShopList_(result) {
+  document.getElementById('pet-shop-balance').textContent = '目前代幣：' + result.balance;
+  const list = document.getElementById('pet-shop-list');
+  list.innerHTML = '';
+  result.accessories.forEach(function (a) {
+    const card = document.createElement('div');
+    card.className = 'pet-shop-card';
+
+    const emoji = document.createElement('div');
+    emoji.className = 'pet-shop-emoji';
+    emoji.textContent = a.display_emoji;
+
+    const body = document.createElement('div');
+    body.className = 'pet-shop-body';
+    const name = document.createElement('div');
+    name.className = 'pet-shop-name';
+    name.textContent = a.accessory_name;
+    const price = document.createElement('div');
+    price.className = 'pet-shop-price';
+    price.textContent = a.owned ? '已擁有' : ('價格 ' + a.price_coins + ' 代幣');
+    body.appendChild(name);
+    body.appendChild(price);
+
+    // 這一版購買／穿戴一律 disabled、不掛 onclick——不是「打了但被後端擋」，
+    // 是前端這一版本來就不會嘗試送出 buyPetAccessory／equipPetAccessory。
+    const btn = document.createElement('button');
+    btn.className = 'pet-shop-action-btn' + (a.equipped ? ' equipped' : '');
+    btn.disabled = true;
+    btn.textContent = a.equipped ? '已穿戴' : 'Preview 尚未開放';
+
+    card.appendChild(emoji);
+    card.appendChild(body);
+    card.appendChild(btn);
+    list.appendChild(card);
+  });
 }
 
 function treeOpenPendingKey_(childId) { return 'forest_tree_open_pending_' + childId; }
@@ -2944,7 +3162,7 @@ function renderForestPet(data) {
      若這段 HTML 被整份複製到 forest（正式站）repo，TEST_ONLY_applyHostGuard_()
      會在非 localhost / forest-preview 網域時把這個區塊強制 display:none，
      且 TEST_ONLY_setAccessory_() 本體也會拒絕在不允許的網域上生效（雙重防護，
-     不只靠隱藏）。上正式站前仍建議直接刪除整個 TEST_ONLY_BEGIN/END 區塊。 --><div id="TEST_ONLY_accessory_select_block"><select class="TEST_ONLY_accessory_select" id="TEST_ONLY_accessory_select" onclick="event.stopPropagation()" onchange="event.stopPropagation(); TEST_ONLY_setAccessory_(this.value)"><option value="">（測試用：不穿戴配件）</option><option value="leaf_clip">葉子髮夾</option><option value="star_bow">星星蝴蝶結</option><option value="forest_hat">森林小帽</option><option value="fairy_crown">精靈皇冠</option><option value="acorn_bell">橡果鈴鐺</option><option value="daisy_collar">小花項圈</option><option value="berry_bandana">藍莓領巾</option><option value="moon_charm">月亮吊飾</option><option value="magic_scarf">魔法圍巾</option><option value="rainbow_wings">彩虹翅膀</option></select></div><!-- TEST_ONLY_END --><div class="pet-zoom-modal" id="pet-zoom-modal"><div class="pet-zoom-panel"><button class="pet-zoom-close" onclick="closePetZoom()">✕</button><div class="pet-name-label" id="pet-zoom-name"></div><div class="pet-stage" id="pet-stage" onclick="petTouch()"><img class="pet-portrait" id="pet-portrait" src="img/pet/cat_portrait.png" alt="貓咪"></div><div class="pet-hint" id="pet-hint">摸摸貓咪，牠會很開心！</div><div class="section-title" style="padding-top:0;">🎒 後端背包</div><div class="pet-food-grid" id="pet-food-grid"></div><div style="padding:0 12px 12px;"><button class="pet-bath-btn" id="pet-bath-btn" onclick="petBath()">🛁 幫貓咪洗香香（純動畫）</button></div></div></div>${renderTreeSection_(childId, classified.kind !== 'present')}`;
+     不只靠隱藏）。上正式站前仍建議直接刪除整個 TEST_ONLY_BEGIN/END 區塊。 --><div id="TEST_ONLY_accessory_select_block"><select class="TEST_ONLY_accessory_select" id="TEST_ONLY_accessory_select" onclick="event.stopPropagation()" onchange="event.stopPropagation(); TEST_ONLY_setAccessory_(this.value)"><option value="__follow_real__" selected>（跟隨實際穿戴）</option><option value="">（測試用：強制不穿戴）</option><option value="leaf_clip">葉子髮夾</option><option value="star_bow">星星蝴蝶結</option><option value="forest_hat">森林小帽</option><option value="fairy_crown">精靈皇冠</option><option value="acorn_bell">橡果鈴鐺</option><option value="daisy_collar">小花項圈</option><option value="berry_bandana">藍莓領巾</option><option value="moon_charm">月亮吊飾</option><option value="magic_scarf">魔法圍巾</option><option value="rainbow_wings">彩虹翅膀</option></select></div><!-- TEST_ONLY_END --><button class="pet-shop-btn" onclick="event.stopPropagation(); openPetShop()">🛒 配件商店</button><div class="pet-shop-modal" id="pet-shop-modal"><div class="pet-shop-panel"><button class="pet-shop-close" onclick="closePetShop()">✕</button><div class="pet-shop-title">🛒 配件商店</div><div class="pet-shop-balance" id="pet-shop-balance"></div><div class="pet-shop-status" id="pet-shop-status"></div><div class="pet-shop-list" id="pet-shop-list"></div></div></div><div class="pet-zoom-modal" id="pet-zoom-modal"><div class="pet-zoom-panel"><button class="pet-zoom-close" onclick="closePetZoom()">✕</button><div class="pet-name-label" id="pet-zoom-name"></div><div class="pet-stage" id="pet-stage" onclick="petTouch()"><img class="pet-portrait" id="pet-portrait" src="img/pet/cat_portrait.png" alt="貓咪"></div><div class="pet-hint" id="pet-hint">摸摸貓咪，牠會很開心！</div><div class="section-title" style="padding-top:0;">🎒 後端背包</div><div class="pet-food-grid" id="pet-food-grid"></div><div style="padding:0 12px 12px;"><button class="pet-bath-btn" id="pet-bath-btn" onclick="petBath()">🛁 幫貓咪洗香香（純動畫）</button></div></div></div>${renderTreeSection_(childId, classified.kind !== 'present')}`;
   document.getElementById('pet-room-name').textContent = pet.pet_name;
   document.getElementById('pet-zoom-name').textContent = pet.pet_name;
   renderPetFood();
@@ -3178,6 +3396,19 @@ const ROOM_STATE_POSE_KEYS_ = { sitting: 'portrait', grooming: 'groom', sleeping
 // 不動當成 fallback，導致貓咪卡在上一個配件的姿勢專用圖換不回來。
 const ROOM_STATE_BASE_SRC_ = { sitting: 'img/pet/cat_portrait.png', grooming: 'img/pet/cat_groom_v3.png', sleeping: 'img/pet/cat_sleep_v3.png' };
 let TEST_ONLY_equippedAccessoryId_ = '';
+// TEST_ONLY_overrideActive_ 為 false 時代表選單停在「跟隨實際穿戴」——這時
+// TEST_ONLY_equippedAccessoryId_ 的值（通常是空字串）不代表使用者要強制不穿戴，
+// 只是還沒有覆寫。只有選單被手動切到其他選項（包含「強制不穿戴」那個選項）時，
+// overrideActive_ 才會變 true，effective 值才會改用 TEST_ONLY_equippedAccessoryId_。
+// 這個 flag 純粹是畫面上的視覺 override，任何情況都不會呼叫後端 API。
+let TEST_ONLY_overrideActive_ = false;
+// 真正的穿戴來源：從後端 getPetEconomyData 回傳的 equipped_accessory_id 更新
+// （buyPetAccessory／equipPetAccessory 尚未核准在 preview 呼叫，見 Gate E／Gate B）。
+let petAccessoryEquippedId_ = '';
+function effectiveEquippedAccessoryId_() {
+  if (TEST_ONLY_overrideActive_) return TEST_ONLY_equippedAccessoryId_;
+  return petAccessoryEquippedId_ || '';
+}
 
 // TEST_ONLY：網域防護——只允許本機測試（localhost/127.0.0.1/file://）或
 // forest-preview 的 GitHub Pages 網域啟用測試選單。就算這整段程式碼被誤搬到
@@ -3199,12 +3430,19 @@ function TEST_ONLY_applyHostGuard_() {
   return allowed;
 }
 
-function TEST_ONLY_setAccessory_(accessoryId) {
+function TEST_ONLY_setAccessory_(value) {
   if (!TEST_ONLY_applyHostGuard_()) {
+    TEST_ONLY_overrideActive_ = false;
     TEST_ONLY_equippedAccessoryId_ = ''; // 非允許網域：強制不生效，不留殘值
     return;
   }
-  TEST_ONLY_equippedAccessoryId_ = accessoryId || '';
+  if (value === '__follow_real__') {
+    TEST_ONLY_overrideActive_ = false;
+    TEST_ONLY_equippedAccessoryId_ = '';
+  } else {
+    TEST_ONLY_overrideActive_ = true;
+    TEST_ONLY_equippedAccessoryId_ = value || ''; // 空字串＝選單裡的「強制不穿戴」
+  }
   const els = petRoomEls();
   if (els.room) applyAccessoryForState_(els, petRoomCurrentState);
 }
@@ -3232,7 +3470,7 @@ function computeContainRect_(container, imgEl) {
 }
 
 function applyOverlayToImg_(overlayImg, baseImg, poseKey, layerClass) {
-  const accessoryId = TEST_ONLY_equippedAccessoryId_;
+  const accessoryId = effectiveEquippedAccessoryId_();
   if (!overlayImg || !baseImg) return;
   if (!accessoryId || ACCESSORY_MANIFEST.hidden_states.indexOf(poseKey) !== -1) {
     overlayImg.style.display = 'none';
@@ -3260,7 +3498,7 @@ function applyOverlayToImg_(overlayImg, baseImg, poseKey, layerClass) {
 // POSE_SPECIFIC_MAP.json 的 priority_rule）：整張換成已經合成好貓咪+配件的圖，
 // 這種情況下疊圖要隱藏，不能疊兩次。
 function applyPoseSlot_(baseImg, overlayImg, poseKey, fallbackSrc) {
-  const accessoryId = TEST_ONLY_equippedAccessoryId_;
+  const accessoryId = effectiveEquippedAccessoryId_();
   const specificList = accessoryId && POSE_SPECIFIC_MAP.accessories[accessoryId];
   if (accessoryId && specificList && specificList.indexOf(poseKey) !== -1) {
     baseImg.src = 'pose_specific/' + accessoryId + '/' + poseKey + '.png';
