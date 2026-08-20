@@ -188,9 +188,12 @@ body {
   background: radial-gradient(ellipse at center, rgba(30,20,10,0.32) 0%, rgba(30,20,10,0) 75%);
 }
 .pet-room-flip { position: relative; z-index: 1; width: 100%; height: 100%; }
+.pet-room-pose {
+  position: relative; width: 100%; height: 100%;
+  transform-origin: 50% 100%; will-change: transform;
+}
 .pet-room-sprite { position: relative; width: 100%; height: 100%; }
 .pet-room-sprite.pet-room-walking { animation: petWalkBob 0.45s ease-in-out infinite; }
-.pet-room-static.pet-room-blink { animation: petRoomBlinkAnim 0.18s ease; }
 .pet-room-walkframes { position: absolute; inset: 0; }
 .pet-room-frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .pet-room-frame.frame-a { animation: petFrameA 0.5s steps(1) infinite; }
@@ -272,17 +275,11 @@ body {
   50%      { transform: translateY(0) rotate(0deg); }
   75%      { transform: translateY(-3px) rotate(3deg); }
 }
-@keyframes petRoomBlinkAnim { 0%,100% { transform: scaleY(1); } 50% { transform: scaleY(0.8); } }
 .pet-room-zzz {
   position: absolute; top: -14px; right: -8px; font-size: 16px; pointer-events: none;
   animation: petZzzFloat 2s ease-in-out infinite;
 }
 @keyframes petZzzFloat { 0%,100% { transform: translateY(0); opacity: 0.7; } 50% { transform: translateY(-8px); opacity: 1; } }
-.pet-room-groom-fx {
-  position: absolute; bottom: 15px; left: 24px; font-size: 11px; pointer-events: none;
-  animation: petGroomFx 1s ease-in-out infinite;
-}
-@keyframes petGroomFx { 0%,100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.1); } }
 .pet-room-status { font-size: 12px; color: var(--cocoa-soft); text-align: center; padding: 6px 16px 0; }
 .pet-room-name { font-size: 15px; font-weight: 700; color: var(--cocoa); text-align: center; padding: 8px 16px 0; }
 .pet-name-label { font-size: 15px; font-weight: 700; color: var(--cocoa); text-align: center; margin-bottom: 4px; }
@@ -3200,6 +3197,15 @@ function renderForestPet(data) {
      不只靠隱藏）。上正式站前仍建議直接刪除整個 TEST_ONLY_BEGIN/END 區塊。 --><div id="TEST_ONLY_accessory_select_block"><select class="TEST_ONLY_accessory_select" id="TEST_ONLY_accessory_select" onclick="event.stopPropagation()" onchange="event.stopPropagation(); TEST_ONLY_setAccessory_(this.value)"><option value="__follow_real__" selected>（跟隨實際穿戴）</option><option value="">（測試用：強制不穿戴）</option><option value="leaf_clip">葉子髮夾</option><option value="star_bow">星星蝴蝶結</option><option value="forest_hat">森林小帽</option><option value="fairy_crown">精靈皇冠</option><option value="acorn_bell">橡果鈴鐺</option><option value="daisy_collar">小花項圈</option><option value="berry_bandana">藍莓領巾</option><option value="moon_charm">月亮吊飾</option><option value="magic_scarf">魔法圍巾</option><option value="rainbow_wings">彩虹翅膀</option></select></div><!-- TEST_ONLY_END --><button class="pet-shop-btn" onclick="event.stopPropagation(); openPetShop()">🛒 配件商店</button><div class="pet-shop-modal" id="pet-shop-modal"><div class="pet-shop-panel"><button class="pet-shop-close" onclick="closePetShop()">✕</button><div class="pet-shop-title">🛒 配件商店</div><div class="pet-shop-balance" id="pet-shop-balance"></div><div class="pet-shop-status" id="pet-shop-status"></div><div class="pet-shop-list" id="pet-shop-list"></div></div></div><div class="pet-zoom-modal" id="pet-zoom-modal"><div class="pet-zoom-panel"><button class="pet-zoom-close" onclick="closePetZoom()">✕</button><div class="pet-name-label" id="pet-zoom-name"></div><div class="pet-stage" id="pet-stage" onclick="petTouch()"><img class="pet-portrait" id="pet-portrait" src="img/pet/cat_portrait.png" alt="貓咪"></div><div class="pet-hint" id="pet-hint">摸摸貓咪，牠會很開心！</div><div class="section-title" style="padding-top:0;">🎒 後端背包</div><div class="pet-food-grid" id="pet-food-grid"></div><div style="padding:0 12px 12px;"><button class="pet-bath-btn" id="pet-bath-btn" onclick="petBath()">🛁 幫貓咪洗香香（純動畫）</button></div></div></div>${renderTreeSection_(childId, classified.kind !== 'present')}`;
   document.getElementById('pet-room-name').textContent = pet.pet_name;
   document.getElementById('pet-zoom-name').textContent = pet.pet_name;
+  // 尺寸標準化必須包住「貓咪 + 配件」整組，讓兩者使用完全相同的等比例縮放與錨點。
+  const spriteEl = document.getElementById('pet-room-sprite');
+  if (spriteEl && !document.getElementById('pet-room-pose')) {
+    const poseEl = document.createElement('div');
+    poseEl.className = 'pet-room-pose';
+    poseEl.id = 'pet-room-pose';
+    spriteEl.parentNode.insertBefore(poseEl, spriteEl);
+    poseEl.appendChild(spriteEl);
+  }
   renderPetFood();
   startPetRoom();
 }
@@ -3220,14 +3226,27 @@ const PET_ROOM_SAFE_LEFT_FRACTION = 0.23;
 const PET_ROOM_SAFE_RIGHT_FRACTION = 0.46;
 let petRoomTimer = null;
 let petRoomBlinkTimer = null;
+let petRoomBlinkRestoreTimer = null;
+let petRoomBlinkSequence = 0;
 let petRoomFacing = 1;
 let petRoomCurrentState = 'idle';
+
+// 所有姿勢只做等比例縮放，縮放原點固定在腳底／身體接地處。
+// 貓咪與配件同在 #pet-room-pose 內，因此不會因尺寸標準化而彼此錯位。
+const PET_ROOM_POSE_TRANSFORMS_ = {
+  portrait: { scale: 1.00, x: 0, y: 0 },
+  idle:     { scale: 1.08, x: 0, y: 0 },
+  groom:    { scale: 1.06, x: 0, y: 0 },
+  sleep:    { scale: 1.34, x: 0, y: 0 },
+  walk:     { scale: 1.42, x: 0, y: 0 },
+};
 
 function petRoomEls() {
   return {
     room: document.getElementById('pet-room'),
     wrap: document.getElementById('pet-room-wrap'),
     flip: document.getElementById('pet-room-flip'),
+    pose: document.getElementById('pet-room-pose'),
     sprite: document.getElementById('pet-room-sprite'),
     walkFrames: document.getElementById('pet-room-walkframes'),
     idleFrames: document.getElementById('pet-room-idleframes'),
@@ -3258,6 +3277,14 @@ function setRoomStatus(text) {
   if (el) el.textContent = text;
 }
 
+function setPetRoomPoseTransform_(els, poseName) {
+  const pose = PET_ROOM_POSE_TRANSFORMS_[poseName] || PET_ROOM_POSE_TRANSFORMS_.portrait;
+  if (els.pose) {
+    els.pose.style.transform = `translate(${pose.x}px, ${pose.y}px) scale(${pose.scale})`;
+  }
+  return pose;
+}
+
 function startPetRoom() {
   stopPetRoom();
   TEST_ONLY_applyHostGuard_(); // 每次房間重新渲染都重新判定一次網域，不能只判定一次就假設不變
@@ -3268,15 +3295,21 @@ function startPetRoom() {
 function stopPetRoom() {
   clearTimeout(petRoomTimer);
   clearInterval(petRoomBlinkTimer);
+  clearTimeout(petRoomBlinkRestoreTimer);
+  petRoomBlinkSequence++;
   petRoomTimer = null;
   petRoomBlinkTimer = null;
+  petRoomBlinkRestoreTimer = null;
 }
 
 function petRoomTick() {
   const els = petRoomEls();
   if (!els.room || !els.wrap) return; // 分頁還沒建立好就先跳過，下次互動時會重新啟動
 
-  const oldFx = els.wrap.querySelector('.pet-room-zzz, .pet-room-groom-fx');
+  clearTimeout(petRoomBlinkRestoreTimer);
+  petRoomBlinkRestoreTimer = null;
+  petRoomBlinkSequence++;
+  const oldFx = els.wrap.querySelector('.pet-room-zzz');
   if (oldFx) oldFx.remove();
   els.sprite.classList.remove('pet-room-walking');
   els.staticImg.style.transform = '';
@@ -3294,11 +3327,13 @@ function petRoomTick() {
   petRoomCurrentState = state;
 
   if (state === 'walking') {
+    const pose = setPetRoomPoseTransform_(els, 'walk');
     const roomWidth = els.room.clientWidth;
     const spriteWidth = els.wrap.offsetWidth || 56;
+    const visualOverhang = Math.max(0, (spriteWidth * pose.scale - spriteWidth) / 2);
     const curLeftPx = els.wrap.offsetLeft;
-    const minLeftPx = roomWidth * PET_ROOM_SAFE_LEFT_FRACTION;
-    const maxLeftPx = Math.max(minLeftPx, Math.min(roomWidth - spriteWidth, roomWidth * PET_ROOM_SAFE_RIGHT_FRACTION - spriteWidth));
+    const minLeftPx = roomWidth * PET_ROOM_SAFE_LEFT_FRACTION + visualOverhang;
+    const maxLeftPx = Math.max(minLeftPx, Math.min(roomWidth - spriteWidth - visualOverhang, roomWidth * PET_ROOM_SAFE_RIGHT_FRACTION - spriteWidth - visualOverhang));
     const targetLeftPx = minLeftPx + Math.random() * (maxLeftPx - minLeftPx);
     const distance = Math.abs(targetLeftPx - curLeftPx);
     duration = Math.max(1.5, distance / PET_ROOM_SPEED);
@@ -3313,6 +3348,7 @@ function petRoomTick() {
     els.sprite.classList.add('pet-room-walking');
     setRoomStatus('貓咪走來走去～');
   } else if (state === 'idle') {
+    setPetRoomPoseTransform_(els, 'idle');
     duration = 2 + Math.random() * 2;
     freezePetRoomPosition(els);
     els.walkFrames.style.display = 'none';
@@ -3320,23 +3356,22 @@ function petRoomTick() {
     els.idleFrames.style.display = 'block';
     setRoomStatus('貓咪東張西望中…');
   } else if (state === 'sitting') {
+    setPetRoomPoseTransform_(els, 'portrait');
     duration = 3 + Math.random() * 3;
     freezePetRoomPosition(els);
     els.walkFrames.style.display = 'none';
     els.staticImg.style.display = 'block';
     setRoomStatus('貓咪坐著休息～');
   } else if (state === 'grooming') {
+    setPetRoomPoseTransform_(els, 'groom');
     duration = 3 + Math.random() * 2;
     freezePetRoomPosition(els);
     els.walkFrames.style.display = 'none';
     els.staticImg.style.display = 'block';
     els.staticImg.src = CAT_PORTRAIT_GROOM;
-    const fx = document.createElement('div');
-    fx.className = 'pet-room-groom-fx';
-    fx.textContent = '💦';
-    els.flip.appendChild(fx); // 掛在會被 scaleX 翻面的容器裡，貓咪面向另一邊時位置才會跟著鏡射，不會跑掉
     setRoomStatus('貓咪舔舔手，整理毛毛中～');
   } else { // sleeping
+    setPetRoomPoseTransform_(els, 'sleep');
     duration = 6 + Math.random() * 5;
     freezePetRoomPosition(els);
     els.walkFrames.style.display = 'none';
@@ -3354,14 +3389,20 @@ function petRoomTick() {
 }
 
 function petRoomMaybeBlink() {
-  // 東張西望現在是左看/右看兩張圖交叉播放，不再用同一張圖疊眨眼動畫；只有坐著休息還是單張靜態圖需要眨眼
+  // 只有坐著休息需要眨眼。不可再用 scaleY 壓縮整隻貓；改成同尺寸、同錨點的閉眼圖片。
   if (petRoomCurrentState !== 'sitting') return;
   if (Math.random() < 0.5) return; // 不用每次都眨，看起來更自然
   const els = petRoomEls();
   if (!els.staticImg) return;
-  els.staticImg.classList.remove('pet-room-blink');
-  void els.staticImg.offsetWidth;
-  els.staticImg.classList.add('pet-room-blink');
+  const sequence = ++petRoomBlinkSequence;
+  clearTimeout(petRoomBlinkRestoreTimer);
+  renderPetRoomSittingFrame_(els, 'portrait_blink', CAT_PORTRAIT_BLINK, sequence).then(function (shown) {
+    if (!shown || sequence !== petRoomBlinkSequence || petRoomCurrentState !== 'sitting') return;
+    petRoomBlinkRestoreTimer = setTimeout(function () {
+      if (sequence !== petRoomBlinkSequence || petRoomCurrentState !== 'sitting') return;
+      renderPetRoomSittingFrame_(els, 'portrait', CAT_PORTRAIT_NEUTRAL, sequence);
+    }, 160);
+  });
 }
 
 function openPetZoom() {
@@ -3540,8 +3581,40 @@ function applyPoseSlot_(baseImg, overlayImg, poseKey, fallbackSrc) {
     if (overlayImg) overlayImg.style.display = 'none';
   } else {
     baseImg.src = fallbackSrc;
-    applyOverlayToImg_(overlayImg, baseImg, poseKey, '');
+    if (overlayImg) overlayImg.style.display = 'none';
+    // 換姿勢時 naturalWidth/naturalHeight 可能暫時仍屬於上一張圖；等新底圖 decode
+    // 完成後再依該姿勢畫布計算配件座標，避免項鍊／領巾短暫漂浮或永久套到舊比例。
+    const expectedAccessoryId = accessoryId;
+    baseImg.decode().then(function () {
+      if (baseImg.getAttribute('src') !== fallbackSrc) return;
+      if (effectiveEquippedAccessoryId_() !== expectedAccessoryId) return;
+      applyOverlayToImg_(overlayImg, baseImg, poseKey, '');
+    }).catch(function () {
+      if (overlayImg) overlayImg.style.display = 'none';
+    });
   }
+}
+
+// 房間坐姿眨眼使用真正的閉眼圖片。圖片完成 decode 後才重新計算透明配件位置，
+// 避免 naturalWidth/naturalHeight 還是上一張圖時，把配件短暫放到錯誤位置。
+async function renderPetRoomSittingFrame_(els, poseKey, fallbackSrc, sequence) {
+  const accessoryId = effectiveEquippedAccessoryId_();
+  const specificList = accessoryId && POSE_SPECIFIC_MAP.accessories[accessoryId];
+  const hasSpecific = !!(accessoryId && specificList && specificList.indexOf(poseKey) !== -1);
+  const targetSrc = hasSpecific ? ('pose_specific/' + accessoryId + '/' + poseKey + '.png') : fallbackSrc;
+
+  if (els.staticAcc) els.staticAcc.style.display = 'none';
+  els.staticImg.src = targetSrc;
+  try {
+    await els.staticImg.decode();
+  } catch (err) {
+    return false; // 缺圖或解碼失敗時寧可不眨眼，也不能讓舊圖／錯位配件閃一下
+  }
+
+  if (sequence !== petRoomBlinkSequence || petRoomCurrentState !== 'sitting') return false;
+  if (els.staticImg.getAttribute('src') !== targetSrc) return false;
+  if (!hasSpecific) applyOverlayToImg_(els.staticAcc, els.staticImg, poseKey, '');
+  return true;
 }
 
 function applyAccessoryForState_(els, state) {
