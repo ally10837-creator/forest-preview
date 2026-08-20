@@ -1788,11 +1788,11 @@ const API = "https://script.google.com/macros/s/AKfycbwN5j0D9Js4cSW0NXJF6xBAUVQa
   const APPROVED_POST_ACTIONS = new Set([
     'issueAdminToken', 'createPairingCode', 'exchangePairingCode', 'initializePet', 'getTransactionStatus',
     'getTreeStatus', 'openTreeReward',
-    // 配件商店唯讀候選版核准（2026-08-20）：只加 getPetEconomyData，只讀取
-    // PetAccessoryCatalog／PetInventory／balance，不寫入。buyPetAccessory／
-    // equipPetAccessory 會扣代幣、建立交易、改庫存穿戴狀態，仍然沒有核准，
-    // 分別留給日後 Gate E（穿戴）／Gate B（購買）——不要在這裡自己加進來。
-    'getPetEconomyData'
+    // 配件商店：getPetEconomyData（唯讀）於 2026-08-20 核准。
+    // equipPetAccessory（穿戴／更換已擁有配件）於 Gate E 核准（2026-08-21）。
+    // buyPetAccessory 會扣代幣、建立購買交易，仍然沒有核准，留給日後 Gate B——
+    // 不要在這裡自己加進來。
+    'getPetEconomyData', 'equipPetAccessory'
   ]);
   let apiOrigin = '', apiPath = '';
   try { const apiUrl = new URL(API); apiOrigin = apiUrl.origin; apiPath = apiUrl.pathname; } catch (e) {}
@@ -2784,15 +2784,20 @@ function onEnterForestPet_() {
 
 // ══════════════════════════════════════════════
 // 配件商店（唯讀候選版，2026-08-20，P1 修正版）。
-// 範圍：只呼叫 getPetEconomyData（已核准，見上方 APPROVED_POST_ACTIONS）。
-// buyPetAccessory／equipPetAccessory 尚未核准，這版完全沒有任何程式路徑會呼叫
-// 到——不只是按鈕 disabled，連對應的函式本體都還沒寫。Gate E（穿戴）、Gate B
-// （購買／扣幣／重試冪等／交易核對）個別通過覆核後才會各自新增，屆時再獨立
-// 覆核那批新程式碼，不要在唯讀版裡先放進尚未審查的骨架，徒增審查面積。
+// 範圍：getPetEconomyData（唯讀）＋ equipPetAccessory（Gate E：只能穿戴／更換
+// 已擁有的配件）。buyPetAccessory 仍未核准，見上方 APPROVED_POST_ACTIONS，這版
+// 完全沒有任何程式路徑會呼叫到——不只是按鈕 disabled，連對應的函式本體都還
+// 沒寫。Gate B（購買／扣幣／交易核對）通過覆核後才會新增，屆時再獨立覆核那批
+// 新程式碼，不要在這版裡先放進尚未審查的骨架，徒增審查面積。
 // 無 token／token 失效／讀取失敗／回應格式不合法時，一律視為「未穿戴」＋明確
-// 提示，不用快取或假資料冒充目前真的穿戴狀態。
+// 提示，不用快取或假資料冒充目前真的穿戴狀態。穿戴請求同理：後端沒有明確
+// 回傳成功前，畫面一律不假設已經穿上，成功後一定重新讀一次 getPetEconomyData
+// 當唯一真實狀態，不直接信任這次穿戴 API 回應本身的 result 就地更新畫面。
 // ══════════════════════════════════════════════
 let petShopLastResult_ = null; // 最近一次通過驗證的 getPetEconomyData result，畫商店清單用
+let petShopEquipBusy_ = false; // 目前是否有一筆穿戴請求在飛行中（同一時間只允許一筆，鎖住所有穿戴按鈕）
+let petShopEquipTargetId_ = null; // 正在穿戴中的 accessory_id，只用來畫「穿戴中…」文字
+let petShopRequestSeq_ = 0; // 每次商店重新整理／發出穿戴請求時遞增，讓過期回應能被辨識並安全丟棄，不污染目前孩子/畫面
 
 function petShopErrorMessage_(res) {
   if (res.error === 'network_error' || res.error === 'internal_error') return '網路結果不確定，請再試一次';
@@ -2843,6 +2848,12 @@ function validatePetEconomyResult_(result) {
 function resetPetAccessoryEquipState_() {
   petShopLastResult_ = null;
   petAccessoryEquippedId_ = '';
+  // 任何「把配件狀態歸零成未知」的情境（切孩子、讀取失敗、token 失效）都必須
+  // 同時釋放穿戴忙碌鎖並讓任何飛行中的舊穿戴請求之後被視為過期——不然舊請求
+  // 事後回來，可能把新孩子/新畫面誤判成還在忙碌，或用舊資料覆蓋新狀態。
+  petShopRequestSeq_ += 1;
+  petShopEquipBusy_ = false;
+  petShopEquipTargetId_ = null;
   const els = petRoomEls();
   if (els.room) applyAccessoryForState_(els, petRoomCurrentState);
 }
@@ -2899,8 +2910,130 @@ async function refreshPetShop_() {
   petAccessoryEquippedId_ = res.result.equipped_accessory_id || '';
   const els = petRoomEls();
   if (els.room) applyAccessoryForState_(els, petRoomCurrentState);
-  statusEl.textContent = res.result.blocked ? '⚠️ 後端目前有其他寵物交易處理中，購買／穿戴功能開放後也會先擋住。' : '';
+  statusEl.textContent = res.result.blocked ? '⚠️ 後端目前有其他寵物交易處理中，暫時無法穿戴／更換配件。' : '';
   renderPetShopList_(res.result);
+}
+
+function setPetShopStatus_(text) {
+  const el = document.getElementById('pet-shop-status');
+  if (el) el.textContent = text;
+}
+
+// ══════════════════════════════════════════════
+// Gate E：穿戴／更換已擁有的配件（equipPetAccessory）。
+// 冪等鍵（clientRequestId）持久化到 localStorage 的做法，跟既有 initializePet／
+// openTreeReward 完全同一套慣例：送出前先在本機建立、寫入 localStorage 再打
+// API；同一筆 pending 沒解決前重複觸發一定拿到同一個 clientRequestId／
+// accessoryId，不會因為使用者多按幾次就產生新的交易。網路逾時／看不懂回應時
+// 一律不本地假設已穿戴成功，只顯示「結果不確定，可安全重試」，成功與否交由
+// 之後重新讀 getPetEconomyData（唯一真實狀態來源）決定畫面。
+// ══════════════════════════════════════════════
+function petEquipPendingKey_(childId) { return 'forest_pet_equip_pending_' + childId; }
+function getPetEquipPending_(childId) {
+  try {
+    const value = JSON.parse(localStorage.getItem(petEquipPendingKey_(childId)) || 'null');
+    if (!value || !/^petequip-[a-z]+-[0-9]+-[0-9a-z]+$/i.test(value.clientRequestId || '') ||
+        typeof value.accessoryId !== 'string' || !ACCESSORY_MANIFEST.accessories[value.accessoryId] ||
+        !Number.isFinite(value.createdAt)) return null;
+    return value;
+  } catch (e) { return null; }
+}
+// pending 尚未解決之前，重複呼叫要拿到一模一樣的 {clientRequestId, accessoryId}；
+// 如果本機已經有「另一件」配件的 pending 還沒解決，回傳 null，呼叫端要擋住、
+// 不能疊加第二筆不同配件的請求（可能造成後端看到的穿戴目標跟畫面預期對不上）。
+function getOrCreatePetEquipPending_(childId, accessoryId) {
+  const existing = getPetEquipPending_(childId);
+  if (existing) return existing.accessoryId === accessoryId ? existing : null;
+  const pending = { clientRequestId: 'petequip-' + childId + '-' + Date.now() + '-' + Math.random().toString(36).slice(2), accessoryId, createdAt: Date.now() };
+  localStorage.setItem(petEquipPendingKey_(childId), JSON.stringify(pending));
+  return pending;
+}
+function clearPetEquipPending_(childId) { localStorage.removeItem(petEquipPendingKey_(childId)); }
+
+async function sendPetEquipAttempt_(childId, pending) {
+  const token = localStorage.getItem(petDeviceTokenKey(childId));
+  if (!token) return { ok: false, error: 'invalid_token', reason: 'missing' };
+  const payload = { childId, deviceToken: token, clientRequestId: pending.clientRequestId, accessoryId: pending.accessoryId };
+  let res = await callPhase2A('equipPetAccessory', payload);
+  if (res.error === 'network_error') res = await callPhase2A('equipPetAccessory', payload);
+  return res;
+}
+
+// 對照後端 finishEquipAccessory_ 的實際回應形狀（見 phase2a_pet_backend.gs），
+// 不假設欄位一定存在或型別正確——格式跟預期的請求對不上就一律視為不可信。
+function normalizePetEquipResponse_(res, pending) {
+  if (!res || !res.ok || !res.result || typeof res.result !== 'object') return { ok: false };
+  const r = res.result;
+  if (r.accessory_id !== pending.accessoryId || r.equipped !== true ||
+      r.equipped_accessory_id !== pending.accessoryId || r.quantity !== 1 ||
+      (r.previous_accessory_id !== null && typeof r.previous_accessory_id !== 'string') ||
+      typeof r.equipped_at !== 'string') return { ok: false };
+  return { ok: true, result: r };
+}
+
+function handlePetEquipAuthError_(childId, res) {
+  if (res.reason === 'credential_conflict') {
+    setPetShopStatus_('⚠️ 裝置憑證資料需要人工核對，請聯絡管理員。');
+  } else {
+    localStorage.removeItem(petDeviceTokenKey(childId));
+    resetPetAccessoryEquipState_();
+    setPetShopStatus_('裝置連結已失效，請重新連結這台裝置。');
+  }
+}
+
+async function resumePetEquip_(childId) {
+  const pending = getPetEquipPending_(childId);
+  if (!pending || petShopEquipBusy_) return;
+  const seq = ++petShopRequestSeq_;
+  petShopEquipBusy_ = true;
+  petShopEquipTargetId_ = pending.accessoryId;
+  if (petShopLastResult_) renderPetShopList_(petShopLastResult_); // 立刻把按鈕鎖住，防止連點
+  setPetShopStatus_('穿戴中，請稍候…');
+  const res = await sendPetEquipAttempt_(childId, pending);
+  // 這段等待期間如果孩子已切換，或又有更新的穿戴請求蓋過來，這筆回應已經過期，
+  // 不能再去動 busy 鎖或畫面——那些狀態現在屬於新的請求／新的孩子。
+  if (seq !== petShopRequestSeq_ || currentChild !== childId) return;
+  petShopEquipBusy_ = false;
+  petShopEquipTargetId_ = null;
+  if (res.ok) {
+    const normalized = normalizePetEquipResponse_(res, pending);
+    if (!normalized.ok) { setPetShopStatus_('⚠️ 穿戴回應格式無法確認，已保留原請求，可再試一次。'); renderPetShopList_(petShopLastResult_); return; }
+    clearPetEquipPending_(childId);
+    // 唯一真實狀態來源：重新讀一次 getPetEconomyData，不直接拿這次穿戴 API 的
+    // result 就地更新畫面——確保小屋跟商店永遠反映後端真正確認過的狀態。
+    await refreshPetShop_();
+    if (currentChild === childId) setPetShopStatus_('✅ 已更換配件！');
+    return;
+  }
+  if (res.error === 'invalid_token') { handlePetEquipAuthError_(childId, res); return; }
+  if (res.error === 'accessory_not_owned' || res.error === 'unknown_accessory_id') {
+    clearPetEquipPending_(childId);
+    await refreshPetShop_();
+    if (currentChild === childId) setPetShopStatus_('⚠️ 這件配件狀態已改變，清單已更新。');
+    return;
+  }
+  if (res.error === 'network_error' || res.error === 'internal_error') {
+    setPetShopStatus_('⚠️ 網路結果不確定，請用原請求再試一次。');
+    renderPetShopList_(petShopLastResult_);
+    return;
+  }
+  if (res.error === 'conflict' || res.error === 'error_unsynced') {
+    setPetShopStatus_('⚠️ 這筆穿戴需要人工核對，請聯絡管理員。');
+    renderPetShopList_(petShopLastResult_);
+    return;
+  }
+  setPetShopStatus_('⚠️ 穿戴請求無法安全完成，已保留原請求，可再試一次。');
+  renderPetShopList_(petShopLastResult_);
+}
+
+async function equipPetAccessoryClick_(accessoryId) {
+  const childId = currentChild;
+  if (!petShopLastResult_ || petShopEquipBusy_ || petShopLastResult_.blocked) return;
+  const entry = petShopLastResult_.accessories.find(function (a) { return a.accessory_id === accessoryId; });
+  if (!entry || !entry.owned || entry.equipped) return; // 未擁有或已穿戴：按鈕本來就不該可點，這裡再擋一次
+  const pending = getOrCreatePetEquipPending_(childId, accessoryId);
+  if (!pending) { setPetShopStatus_('⚠️ 已有另一件配件的穿戴請求待確認，請先完成或重新整理。'); return; }
+  await resumePetEquip_(childId);
 }
 
 // P1-2 修正：改用 DOM＋textContent 組卡片，不是 innerHTML 字串接資料——
@@ -2964,12 +3097,24 @@ function renderPetShopList_(result) {
     body.appendChild(name);
     body.appendChild(price);
 
-    // 這一版購買／穿戴一律 disabled、不掛 onclick——不是「打了但被後端擋」，
-    // 是前端這一版本來就不會嘗試送出 buyPetAccessory／equipPetAccessory。
+    // Gate E：只有「已擁有、目前未穿戴」的配件會掛上 onclick 送出 equipPetAccessory；
+    // 未擁有一律 disabled 不掛 onclick——這一版本來就不會嘗試送出 buyPetAccessory。
     const btn = document.createElement('button');
-    btn.className = 'pet-shop-action-btn' + (a.equipped ? ' equipped' : '');
-    btn.disabled = true;
-    btn.textContent = a.equipped ? '已穿戴' : 'Preview 尚未開放';
+    const isThisBusy = petShopEquipBusy_ && petShopEquipTargetId_ === a.accessory_id;
+    if (!a.owned) {
+      btn.className = 'pet-shop-action-btn';
+      btn.disabled = true;
+      btn.textContent = '尚未擁有';
+    } else if (a.equipped) {
+      btn.className = 'pet-shop-action-btn equipped';
+      btn.disabled = true;
+      btn.textContent = '已穿戴';
+    } else {
+      btn.className = 'pet-shop-action-btn';
+      btn.textContent = isThisBusy ? '穿戴中…' : '穿戴';
+      btn.disabled = petShopEquipBusy_ || result.blocked;
+      if (!btn.disabled) btn.onclick = function () { void equipPetAccessoryClick_(a.accessory_id); };
+    }
 
     card.appendChild(emoji);
     card.appendChild(body);
