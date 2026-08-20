@@ -3595,25 +3595,27 @@ function applyPoseSlot_(baseImg, overlayImg, poseKey, fallbackSrc) {
   }
 }
 
-// 房間坐姿眨眼使用真正的閉眼圖片。圖片完成 decode 後才重新計算透明配件位置，
-// 避免 naturalWidth/naturalHeight 還是上一張圖時，把配件短暫放到錯誤位置。
+// 房間坐姿眨眼只是同一姿勢下切換「睜眼/閉眼」兩張底圖，貓咪姿勢與配件座標
+// 完全不變。先用離屏 Image 預載＋decode 目標圖，確定圖片真的可用（且已在瀏覽器
+// 快取中）才把可見 <img> 的 src 換過去，換圖那一刻是同步可畫的，不會有載入空檔；
+// 全程不動 els.staticAcc 的 display／位置，一般透明疊圖配件維持原本顯示與座標，
+// 不會在眨眼中途消失或跳動。
 async function renderPetRoomSittingFrame_(els, poseKey, fallbackSrc, sequence) {
   const accessoryId = effectiveEquippedAccessoryId_();
   const specificList = accessoryId && POSE_SPECIFIC_MAP.accessories[accessoryId];
   const hasSpecific = !!(accessoryId && specificList && specificList.indexOf(poseKey) !== -1);
   const targetSrc = hasSpecific ? ('pose_specific/' + accessoryId + '/' + poseKey + '.png') : fallbackSrc;
 
-  if (els.staticAcc) els.staticAcc.style.display = 'none';
-  els.staticImg.src = targetSrc;
+  const preload = new Image();
+  preload.src = targetSrc;
   try {
-    await els.staticImg.decode();
+    await preload.decode();
   } catch (err) {
-    return false; // 缺圖或解碼失敗時寧可不眨眼，也不能讓舊圖／錯位配件閃一下
+    return false; // 缺圖或解碼失敗時直接取消這次眨眼，保持原畫面，不動可見的 <img>
   }
 
   if (sequence !== petRoomBlinkSequence || petRoomCurrentState !== 'sitting') return false;
-  if (els.staticImg.getAttribute('src') !== targetSrc) return false;
-  if (!hasSpecific) applyOverlayToImg_(els.staticAcc, els.staticImg, poseKey, '');
+  els.staticImg.src = targetSrc;
   return true;
 }
 
