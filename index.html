@@ -252,7 +252,8 @@ body {
   background: white; border: var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm);
   display: flex; align-items: center; gap: 12px; padding: 10px 14px;
 }
-.pet-shop-emoji { font-size: 28px; width: 40px; text-align: center; flex-shrink: 0; }
+.pet-shop-emoji { font-size: 28px; width: 52px; height: 52px; text-align: center; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.pet-shop-emoji-img { width: 52px; height: 52px; object-fit: contain; display: block; }
 .pet-shop-body { flex: 1; min-width: 0; }
 .pet-shop-name { font-size: 14px; font-weight: 700; color: var(--cocoa); }
 .pet-shop-price { font-size: 11px; color: var(--cocoa-soft); margin-top: 2px; }
@@ -2909,6 +2910,23 @@ async function refreshPetShop_() {
 // accessory_name／display_emoji 這幾個欄位來自後端／Google Sheet，不是常數，
 // 用 textContent 賦值瀏覽器不會把內容當 HTML 解析，天生就不會有注入風險，
 // 不需要額外呼叫 escapeHtmlForRb() 再組字串。
+// 固定白名單：商店縮圖只能用這 10 款事先核准的配件單獨透明圖（不是
+// pose_specific 那種含整隻貓的合成圖）。故意不直接把後端傳回的 accessory_id
+// 串成路徑——就算後端／Sheet 未來出現非預期的 accessory_id，最多只是查不到、
+// 安全退回 emoji，不會被拿去組出意外的圖片路徑。
+const PET_SHOP_ACCESSORY_IMAGE_WHITELIST_ = {
+  leaf_clip: 'img/pet/accessories/leaf_clip.png',
+  star_bow: 'img/pet/accessories/star_bow.png',
+  forest_hat: 'img/pet/accessories/forest_hat.png',
+  fairy_crown: 'img/pet/accessories/fairy_crown.png',
+  acorn_bell: 'img/pet/accessories/acorn_bell.png',
+  daisy_collar: 'img/pet/accessories/daisy_collar.png',
+  berry_bandana: 'img/pet/accessories/berry_bandana.png',
+  moon_charm: 'img/pet/accessories/moon_charm.png',
+  magic_scarf: 'img/pet/accessories/magic_scarf.png',
+  rainbow_wings: 'img/pet/accessories/rainbow_wings.png',
+};
+
 function renderPetShopList_(result) {
   document.getElementById('pet-shop-balance').textContent = '目前代幣：' + result.balance;
   const list = document.getElementById('pet-shop-list');
@@ -2919,7 +2937,24 @@ function renderPetShopList_(result) {
 
     const emoji = document.createElement('div');
     emoji.className = 'pet-shop-emoji';
-    emoji.textContent = a.display_emoji;
+    const imgSrc = PET_SHOP_ACCESSORY_IMAGE_WHITELIST_[a.accessory_id];
+    if (imgSrc) {
+      const img = document.createElement('img');
+      img.className = 'pet-shop-emoji-img';
+      img.alt = a.accessory_name;
+      img.src = imgSrc;
+      // 圖片載入失敗（例如檔案被移除／網路問題）就退回原本的 emoji，
+      // 不要讓整張卡片留白或看起來壞掉。
+      img.onerror = function () {
+        img.remove();
+        emoji.textContent = a.display_emoji;
+      };
+      emoji.appendChild(img);
+    } else {
+      // 不在白名單裡的 accessory_id（未知配件、未來新增但還沒核准縮圖）
+      // 安全退回 emoji，不嘗試用 accessory_id 猜路徑。
+      emoji.textContent = a.display_emoji;
+    }
 
     const body = document.createElement('div');
     body.className = 'pet-shop-body';
