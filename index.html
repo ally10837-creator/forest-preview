@@ -2902,7 +2902,14 @@ async function refreshPetShop_() {
   if (!res.ok || !validatePetEconomyResult_(res.result)) {
     balanceEl.textContent = ''; listEl.innerHTML = '';
     const reason = !res.ok ? petShopErrorMessage_(res) : petShopErrorMessage_({ error: 'invalid_response_shape' });
-    statusEl.textContent = '讀取失敗（' + reason + '），未顯示任何配件狀態，也不會假設目前穿了什麼。';
+    // 臨時診斷用途（找到根因並修好後要移除）：只顯示經過白名單驗證的 res.error
+    // 錯誤碼本身，不顯示 res.reason 或其他任何後端內容——error 欄位固定是後端自己
+    // 訂的英文代碼（例如 pet_not_found／error_unsynced），不是使用者資料，格式對不上
+    // 這個白名單就一律顯示 (unrecognized)，不把不明內容原樣秀到畫面上。
+    const diagCode = !res.ok
+      ? (typeof res.error === 'string' && /^[a-z0-9_]{1,64}$/i.test(res.error) ? res.error : '(unrecognized)')
+      : 'ok=true, invalid result shape';
+    statusEl.textContent = '讀取失敗（' + reason + '），未顯示任何配件狀態，也不會假設目前穿了什麼。[診斷代碼: ' + diagCode + ']';
     resetPetAccessoryEquipState_();
     return;
   }
