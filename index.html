@@ -300,7 +300,8 @@ body {
   z-index: 2; box-shadow: var(--shadow-sm);
 }
 .pet-stage { position: relative; padding: 30px 0 8px; text-align: center; cursor: pointer; }
-.pet-portrait { width: 100%; max-width: 200px; display: block; margin: 0 auto; }
+.pet-portrait-wrap { position: relative; width: 100%; max-width: 200px; margin: 0 auto; }
+.pet-portrait { width: 100%; display: block; }
 .pet-portrait.bounce { animation: petBounce 0.4s ease; }
 @keyframes petBounce {
   0%,100% { transform: scale(1) rotate(0); }
@@ -3499,7 +3500,7 @@ function renderForestPet(data) {
      若這段 HTML 被整份複製到 forest（正式站）repo，TEST_ONLY_applyHostGuard_()
      會在非 localhost / forest-preview 網域時把這個區塊強制 display:none，
      且 TEST_ONLY_setAccessory_() 本體也會拒絕在不允許的網域上生效（雙重防護，
-     不只靠隱藏）。上正式站前仍建議直接刪除整個 TEST_ONLY_BEGIN/END 區塊。 --><div id="TEST_ONLY_accessory_select_block"><select class="TEST_ONLY_accessory_select" id="TEST_ONLY_accessory_select" onclick="event.stopPropagation()" onchange="event.stopPropagation(); TEST_ONLY_setAccessory_(this.value)"><option value="__follow_real__" selected>（跟隨實際穿戴）</option><option value="">（測試用：強制不穿戴）</option><option value="leaf_clip">葉子髮夾</option><option value="star_bow">星星蝴蝶結</option><option value="forest_hat">森林小帽</option><option value="fairy_crown">精靈皇冠</option><option value="acorn_bell">橡果鈴鐺</option><option value="daisy_collar">小花項圈</option><option value="berry_bandana">藍莓領巾</option><option value="moon_charm">月亮吊飾</option><option value="magic_scarf">魔法圍巾</option><option value="rainbow_wings">彩虹翅膀</option></select></div><!-- TEST_ONLY_END --><button class="pet-shop-btn" onclick="event.stopPropagation(); openPetShop()">🛒 配件商店</button><div class="pet-shop-modal" id="pet-shop-modal"><div class="pet-shop-panel"><button class="pet-shop-close" onclick="closePetShop()">✕</button><div class="pet-shop-title">🛒 配件商店</div><div class="pet-shop-balance" id="pet-shop-balance"></div><div class="pet-shop-status" id="pet-shop-status"></div><div class="pet-shop-list" id="pet-shop-list"></div></div></div><div class="pet-zoom-modal" id="pet-zoom-modal"><div class="pet-zoom-panel"><button class="pet-zoom-close" onclick="closePetZoom()">✕</button><div class="pet-name-label" id="pet-zoom-name"></div><div class="pet-stage" id="pet-stage" onclick="petTouch()"><img class="pet-portrait" id="pet-portrait" src="img/pet/cat_portrait.png" alt="貓咪"></div><div class="pet-hint" id="pet-hint">摸摸貓咪，牠會很開心！</div><div class="section-title" style="padding-top:0;">🎒 後端背包</div><div class="pet-food-grid" id="pet-food-grid"></div><div style="padding:0 12px 12px;"><button class="pet-bath-btn" id="pet-bath-btn" onclick="petBath()">🛁 幫貓咪洗香香（純動畫）</button></div></div></div>${renderTreeSection_(childId, classified.kind !== 'present')}`;
+     不只靠隱藏）。上正式站前仍建議直接刪除整個 TEST_ONLY_BEGIN/END 區塊。 --><div id="TEST_ONLY_accessory_select_block"><select class="TEST_ONLY_accessory_select" id="TEST_ONLY_accessory_select" onclick="event.stopPropagation()" onchange="event.stopPropagation(); TEST_ONLY_setAccessory_(this.value)"><option value="__follow_real__" selected>（跟隨實際穿戴）</option><option value="">（測試用：強制不穿戴）</option><option value="leaf_clip">葉子髮夾</option><option value="star_bow">星星蝴蝶結</option><option value="forest_hat">森林小帽</option><option value="fairy_crown">精靈皇冠</option><option value="acorn_bell">橡果鈴鐺</option><option value="daisy_collar">小花項圈</option><option value="berry_bandana">藍莓領巾</option><option value="moon_charm">月亮吊飾</option><option value="magic_scarf">魔法圍巾</option><option value="rainbow_wings">彩虹翅膀</option></select></div><!-- TEST_ONLY_END --><button class="pet-shop-btn" onclick="event.stopPropagation(); openPetShop()">🛒 配件商店</button><div class="pet-shop-modal" id="pet-shop-modal"><div class="pet-shop-panel"><button class="pet-shop-close" onclick="closePetShop()">✕</button><div class="pet-shop-title">🛒 配件商店</div><div class="pet-shop-balance" id="pet-shop-balance"></div><div class="pet-shop-status" id="pet-shop-status"></div><div class="pet-shop-list" id="pet-shop-list"></div></div></div><div class="pet-zoom-modal" id="pet-zoom-modal"><div class="pet-zoom-panel"><button class="pet-zoom-close" onclick="closePetZoom()">✕</button><div class="pet-name-label" id="pet-zoom-name"></div><div class="pet-stage" id="pet-stage" onclick="petTouch()"><div class="pet-portrait-wrap" id="pet-portrait-wrap"><img class="pet-portrait" id="pet-portrait" src="img/pet/cat_portrait.png" alt="貓咪"><img class="pet-accessory-overlay" id="pet-portrait-acc" alt=""></div></div><div class="pet-hint" id="pet-hint">摸摸貓咪，牠會很開心！</div><div class="section-title" style="padding-top:0;">🎒 後端背包</div><div class="pet-food-grid" id="pet-food-grid"></div><div style="padding:0 12px 12px;"><button class="pet-bath-btn" id="pet-bath-btn" onclick="petBath()">🛁 幫貓咪洗香香（純動畫）</button></div></div></div>${renderTreeSection_(childId, classified.kind !== 'present')}`;
   document.getElementById('pet-room-name').textContent = pet.pet_name;
   document.getElementById('pet-zoom-name').textContent = pet.pet_name;
   // 尺寸標準化必須包住「貓咪 + 配件」整組，讓兩者使用完全相同的等比例縮放與錨點。
@@ -3714,6 +3715,7 @@ function openPetZoom() {
   document.getElementById('pet-zoom-modal').style.display = 'flex';
   stopPetRoom();
   schedulePetPortraitBlink();
+  setPetPortraitImage(CAT_PORTRAIT_NEUTRAL); // 一開啟就套用目前穿戴的配件，不用等使用者先摸一次
 }
 
 function closePetZoom() {
@@ -3946,9 +3948,27 @@ const CAT_PORTRAIT_GROOM   = 'img/pet/cat_groom_v3.png';
 const CAT_PORTRAIT_SLEEP   = 'img/pet/cat_sleep_v3.png';
 const CAT_PORTRAIT_BLINK   = 'img/pet/cat_portrait_blink.png';
 
+// 餵食彈窗（放大視窗）配件顯示：跟房間視圖共用同一套 ACCESSORY_MANIFEST／
+// POSE_SPECIFIC_MAP／applyPoseSlot_，只是換一個目標 <img>（#pet-portrait）跟一個
+// 專屬的疊圖元素（#pet-portrait-acc）。CAT_PORTRAIT_BATH 故意不列進這個對照表——
+// ACCESSORY_MANIFEST.hidden_states 已經包含 "bath"，洗澡時本來就不該看到配件，
+// 這裡直接不接配件疊圖邏輯即可達成同樣效果，不用另外判斷。CAT_PORTRAIT_GROOM／
+// CAT_PORTRAIT_SLEEP 只有房間視圖的 els.staticImg 會用到，不會流經
+// setPetPortraitImage，這裡不需要對應。
+const PET_PORTRAIT_POSE_KEY_BY_SRC_ = {};
+PET_PORTRAIT_POSE_KEY_BY_SRC_[CAT_PORTRAIT_NEUTRAL] = 'portrait';
+PET_PORTRAIT_POSE_KEY_BY_SRC_[CAT_PORTRAIT_BLINK] = 'portrait_blink';
+PET_PORTRAIT_POSE_KEY_BY_SRC_[CAT_PORTRAIT_EATING] = 'eating';
+PET_PORTRAIT_POSE_KEY_BY_SRC_[CAT_PORTRAIT_HAPPY] = 'happy';
+
 function setPetPortraitImage(src) {
   const portrait = document.getElementById('pet-portrait');
-  if (portrait) portrait.src = src;
+  if (!portrait) return;
+  const acc = document.getElementById('pet-portrait-acc');
+  const poseKey = PET_PORTRAIT_POSE_KEY_BY_SRC_[src];
+  if (poseKey && acc) { applyPoseSlot_(portrait, acc, poseKey, src); return; }
+  portrait.src = src;
+  if (acc) acc.style.display = 'none';
 }
 
 // ── 餵食彈窗的真閉眼眨眼（換整張臉圖，不是 CSS 擠壓）──
