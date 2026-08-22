@@ -301,6 +301,12 @@ body {
 }
 .pet-stage { position: relative; padding: 30px 0 8px; text-align: center; cursor: pointer; }
 .pet-portrait-wrap { position: relative; width: 100%; max-width: 200px; margin: 0 auto; }
+/* cat_portrait.png（預設待機表情）這張圖本身臉部沒有畫在畫布正中央——尾巴甩到
+   右邊，把整張圖的視覺重心拉偏，直接置中整個畫布會讓臉看起來偏一邊。量測過
+   臉部（鼻子／兩眼中心）實際落在畫布約 41.1% 處，不是 50%，所以往左位移約
+   8.9% 畫布寬度讓臉置中。只有這張圖有這個問題——吃/開心/眨眼表情跟配件合成
+   全幀圖都已經確認過臉本來就置中，不要套用這個位移，所以用 class 只挑這張圖。 */
+.pet-portrait-wrap.portrait-face-shift { transform: translateX(-8.9%); }
 .pet-portrait { width: 100%; display: block; }
 .pet-portrait.bounce { animation: petBounce 0.4s ease; }
 @keyframes petBounce {
@@ -3622,6 +3628,11 @@ function petRoomTick() {
   els.staticImg.src = CAT_PORTRAIT_NEUTRAL;
   els.idleFrames.style.display = 'none';
   resetAccessoryFrames_(els);
+  // els.flip 的 scaleX(±1) 只有走路狀態才該套用，但先前只在走路分支「設定」它，
+  // 從來沒有在其他狀態被「重置」過——導致往右走一次之後，接下來的東張西望／坐著／
+  // 理毛／睡覺全部會殘留那次走路的鏡像，連貓咪本體（不只是配件）都跟著多鏡像一次。
+  // 每次重新 tick 都先歸零，走路分支再依實際方向重新設定，其餘狀態維持不鏡像。
+  els.flip.style.transform = '';
 
   const roll = Math.random();
   let state, duration;
@@ -3769,7 +3780,7 @@ function spawnPetHearts() {
 // 尚未串接 getPetEconomyData 的 equipped_accessory_id（之後接真資料只需
 // 把 TEST_ONLY_setAccessory_ 的呼叫來源換成 API 回傳值，渲染邏輯不用重寫）。
 // ══════════════════════════════════════════════
-const ACCESSORY_MANIFEST = {"coordinate_system":"percent_of_natural_image_canvas","hidden_states":["bath"],"accessories":{"leaf_clip":{"layer":"front","poses":{"portrait":{"left_pct":71.65,"top_pct":5.68,"width_pct":23.05,"mirror_x":false},"portrait_blink":{"left_pct":71.39,"top_pct":5.29,"width_pct":23.19,"mirror_x":false},"eating":{"left_pct":72.13,"top_pct":5.26,"width_pct":23.69,"mirror_x":false},"happy":{"left_pct":71.48,"top_pct":5.26,"width_pct":24.55,"mirror_x":false},"groom":{"left_pct":56.80,"top_pct":17.60,"width_pct":19.02,"mirror_x":false},"sleep":{"left_pct":37.00,"top_pct":4.60,"width_pct":18.00,"mirror_x":false},"idle_left":{"left_pct":69.00,"top_pct":17.00,"width_pct":21.88,"mirror_x":false},"idle_right":{"left_pct":75.60,"top_pct":19.10,"width_pct":21.88,"mirror_x":true},"walk_a":{"left_pct":21.00,"top_pct":2.00,"width_pct":17.00,"mirror_x":true},"walk_b":{"left_pct":21.50,"top_pct":2.00,"width_pct":17.00,"mirror_x":true}}},"star_bow":{"layer":"front","poses":{"portrait":{"left_pct":48.99,"top_pct":2.73,"width_pct":43.75},"portrait_blink":{"left_pct":49.19,"top_pct":2.73,"width_pct":43.75},"eating":{"left_pct":49.33,"top_pct":2.85,"width_pct":44.06},"happy":{"left_pct":49.02,"top_pct":2.73,"width_pct":43.78},"groom":{"left_pct":41.00,"top_pct":10.53,"width_pct":36.61},"sleep":{"left_pct":33.00,"top_pct":3.00,"width_pct":35.00},"idle_left":{"left_pct":49.48,"top_pct":10.64,"width_pct":44.19},"idle_right":{"left_pct":64.34,"top_pct":10.63,"width_pct":44.02},"walk_a":{"left_pct":30.17,"top_pct":2.51,"width_pct":26.95},"walk_b":{"left_pct":30.17,"top_pct":2.53,"width_pct":26.95}}},"forest_hat":{"layer":"front","allow_overflow":true,"poses":{"portrait":{"left_pct":16.24,"top_pct":-4.02,"width_pct":48.42},"portrait_blink":{"left_pct":16.44,"top_pct":-4.02,"width_pct":48.42},"eating":{"left_pct":16.35,"top_pct":-4.19,"width_pct":48.76},"happy":{"left_pct":16.25,"top_pct":-4.02,"width_pct":48.45},"groom":{"left_pct":13.59,"top_pct":4.59,"width_pct":40.52},"sleep":{"left_pct":10.00,"top_pct":-4.00,"width_pct":39.00},"idle_left":{"left_pct":16.40,"top_pct":4.43,"width_pct":48.90},"idle_right":{"left_pct":31.39,"top_pct":4.44,"width_pct":48.72},"walk_a":{"left_pct":10.00,"top_pct":-3.69,"width_pct":29.82},"walk_b":{"left_pct":10.00,"top_pct":-3.73,"width_pct":29.82}}},"fairy_crown":{"layer":"front","allow_overflow":true,"poses":{"portrait":{"left_pct":-3.95,"top_pct":2.80,"width_pct":92.94},"portrait_blink":{"left_pct":-3.75,"top_pct":2.80,"width_pct":92.94},"eating":{"left_pct":-3.98,"top_pct":2.92,"width_pct":93.59},"happy":{"left_pct":-3.95,"top_pct":2.80,"width_pct":93.00},"groom":{"left_pct":-3.31,"top_pct":10.59,"width_pct":77.78},"sleep":{"left_pct":-3.00,"top_pct":3.00,"width_pct":68.00},"idle_left":{"left_pct":-3.99,"top_pct":10.70,"width_pct":93.87},"idle_right":{"left_pct":11.07,"top_pct":10.69,"width_pct":93.52},"walk_a":{"left_pct":-2.43,"top_pct":2.57,"width_pct":57.25},"walk_b":{"left_pct":-2.43,"top_pct":2.60,"width_pct":57.25}}},"acorn_bell":{"layer":"front","poses":{"portrait":{"left_pct":17.94,"top_pct":56.05,"width_pct":48.44},"portrait_blink":{"left_pct":18.14,"top_pct":56.05,"width_pct":48.44},"eating":{"left_pct":18.07,"top_pct":58.43,"width_pct":48.78},"happy":{"left_pct":17.95,"top_pct":56.04,"width_pct":48.47},"groom":{"left_pct":15.01,"top_pct":57.42,"width_pct":40.54},"sleep":{"left_pct":46.00,"top_pct":55.00,"width_pct":28.00},"idle_left":{"left_pct":18.12,"top_pct":59.69,"width_pct":48.92},"idle_right":{"left_pct":33.10,"top_pct":59.50,"width_pct":48.74},"walk_a":{"left_pct":11.05,"top_pct":51.44,"width_pct":29.84},"walk_b":{"left_pct":11.05,"top_pct":52.00,"width_pct":29.84}}},"daisy_collar":{"layer":"front","poses":{"portrait":{"left_pct":8.20,"top_pct":52.17,"width_pct":69.68},"portrait_blink":{"left_pct":8.40,"top_pct":52.17,"width_pct":69.68},"eating":{"left_pct":8.26,"top_pct":54.39,"width_pct":70.17},"happy":{"left_pct":8.21,"top_pct":52.16,"width_pct":69.72},"groom":{"left_pct":6.86,"top_pct":54.01,"width_pct":58.31},"sleep":{"left_pct":43.00,"top_pct":57.00,"width_pct":35.00},"idle_left":{"left_pct":8.28,"top_pct":56.12,"width_pct":70.38},"idle_right":{"left_pct":23.30,"top_pct":55.95,"width_pct":70.12},"walk_a":{"left_pct":5.05,"top_pct":47.88,"width_pct":42.92},"walk_b":{"left_pct":5.05,"top_pct":48.40,"width_pct":42.92}}},"berry_bandana":{"layer":"front","poses":{"portrait":{"left_pct":13.70,"top_pct":52.05,"width_pct":67.60},"portrait_blink":{"left_pct":13.90,"top_pct":52.05,"width_pct":67.60},"eating":{"left_pct":13.80,"top_pct":54.26,"width_pct":68.08},"happy":{"left_pct":13.71,"top_pct":52.04,"width_pct":67.64},"groom":{"left_pct":11.47,"top_pct":53.90,"width_pct":56.57},"sleep":{"left_pct":47.00,"top_pct":58.00,"width_pct":32.00},"idle_left":{"left_pct":13.84,"top_pct":56.01,"width_pct":68.27},"idle_right":{"left_pct":28.83,"top_pct":55.84,"width_pct":68.02},"walk_a":{"left_pct":8.44,"top_pct":47.77,"width_pct":41.64},"walk_b":{"left_pct":8.44,"top_pct":48.29,"width_pct":41.64}}},"moon_charm":{"layer":"front","poses":{"portrait":{"left_pct":12.45,"top_pct":54.33,"width_pct":60.31},"portrait_blink":{"left_pct":12.65,"top_pct":54.33,"width_pct":60.31},"eating":{"left_pct":12.54,"top_pct":56.64,"width_pct":60.73},"happy":{"left_pct":12.46,"top_pct":54.32,"width_pct":60.35},"groom":{"left_pct":10.42,"top_pct":55.91,"width_pct":50.47},"sleep":{"left_pct":48.00,"top_pct":58.00,"width_pct":30.00},"idle_left":{"left_pct":12.57,"top_pct":58.11,"width_pct":60.91},"idle_right":{"left_pct":27.58,"top_pct":57.93,"width_pct":60.69},"walk_a":{"left_pct":7.67,"top_pct":49.86,"width_pct":37.15},"walk_b":{"left_pct":7.67,"top_pct":50.41,"width_pct":37.15}}},"magic_scarf":{"layer":"front","poses":{"portrait":{"left_pct":9.03,"top_pct":52.05,"width_pct":90.65},"portrait_blink":{"left_pct":9.23,"top_pct":52.05,"width_pct":90.65},"eating":{"left_pct":9.09,"top_pct":54.26,"width_pct":91.29},"happy":{"left_pct":9.04,"top_pct":52.04,"width_pct":90.71},"groom":{"left_pct":7.56,"top_pct":53.90,"width_pct":75.86},"sleep":{"left_pct":45.00,"top_pct":57.00,"width_pct":36.00},"idle_left":{"left_pct":9.12,"top_pct":56.01,"width_pct":91.55},"idle_right":{"left_pct":24.13,"top_pct":55.84,"width_pct":91.22},"walk_a":{"left_pct":5.56,"top_pct":47.77,"width_pct":55.84},"walk_b":{"left_pct":5.56,"top_pct":48.29,"width_pct":55.84}}},"rainbow_wings":{"layer":"rear","allow_overflow":true,"poses":{"portrait":{"left_pct":-33.30,"top_pct":18.30,"width_pct":147.50},"portrait_blink":{"left_pct":-33.10,"top_pct":18.30,"width_pct":147.50},"eating":{"left_pct":-33.53,"top_pct":19.08,"width_pct":148.54},"happy":{"left_pct":-33.32,"top_pct":18.30,"width_pct":147.59},"groom":{"left_pct":-27.87,"top_pct":24.22,"width_pct":123.44},"sleep":{"left_pct":-20.00,"top_pct":8.00,"width_pct":140.00},"idle_left":{"left_pct":-33.63,"top_pct":24.96,"width_pct":148.97},"idle_right":{"left_pct":-18.46,"top_pct":24.90,"width_pct":148.42},"walk_a":{"left_pct":-20.51,"top_pct":16.79,"width_pct":90.85},"walk_b":{"left_pct":-20.51,"top_pct":16.98,"width_pct":90.85}}}}};
+const ACCESSORY_MANIFEST = {"coordinate_system":"percent_of_natural_image_canvas","hidden_states":["bath"],"accessories":{"leaf_clip":{"layer":"front","poses":{"portrait":{"left_pct":71.65,"top_pct":5.68,"width_pct":23.05,"mirror_x":false},"portrait_blink":{"left_pct":71.39,"top_pct":5.29,"width_pct":23.19,"mirror_x":false},"eating":{"left_pct":72.13,"top_pct":5.26,"width_pct":23.69,"mirror_x":false},"happy":{"left_pct":71.48,"top_pct":5.26,"width_pct":24.55,"mirror_x":false},"groom":{"left_pct":56.80,"top_pct":17.60,"width_pct":19.02,"mirror_x":false},"sleep":{"left_pct":37.00,"top_pct":4.60,"width_pct":18.00,"mirror_x":false},"idle_left":{"left_pct":69.00,"top_pct":17.00,"width_pct":21.88,"mirror_x":false},"idle_right":{"left_pct":75.60,"top_pct":19.10,"width_pct":21.88,"mirror_x":true},"walk_a":{"left_pct":21.00,"top_pct":2.00,"width_pct":17.00,"mirror_x":true},"walk_b":{"left_pct":21.50,"top_pct":2.00,"width_pct":17.00,"mirror_x":true},"walk_a_right":{"hidden":true},"walk_b_right":{"hidden":true}}},"star_bow":{"layer":"front","poses":{"portrait":{"left_pct":48.99,"top_pct":2.73,"width_pct":43.75},"portrait_blink":{"left_pct":49.19,"top_pct":2.73,"width_pct":43.75},"eating":{"left_pct":49.33,"top_pct":2.85,"width_pct":44.06},"happy":{"left_pct":49.02,"top_pct":2.73,"width_pct":43.78},"groom":{"left_pct":41.00,"top_pct":10.53,"width_pct":36.61},"sleep":{"left_pct":33.00,"top_pct":3.00,"width_pct":35.00},"idle_left":{"left_pct":49.48,"top_pct":10.64,"width_pct":44.19},"idle_right":{"left_pct":64.34,"top_pct":10.63,"width_pct":44.02},"walk_a":{"left_pct":30.17,"top_pct":2.51,"width_pct":26.95},"walk_b":{"left_pct":30.17,"top_pct":2.53,"width_pct":26.95},"walk_a_right":{"hidden":true},"walk_b_right":{"hidden":true}}},"forest_hat":{"layer":"front","allow_overflow":true,"poses":{"portrait":{"left_pct":16.24,"top_pct":-4.02,"width_pct":48.42},"portrait_blink":{"left_pct":16.44,"top_pct":-4.02,"width_pct":48.42},"eating":{"left_pct":16.35,"top_pct":-4.19,"width_pct":48.76},"happy":{"left_pct":16.25,"top_pct":-4.02,"width_pct":48.45},"groom":{"left_pct":13.59,"top_pct":4.59,"width_pct":40.52},"sleep":{"left_pct":10.00,"top_pct":-4.00,"width_pct":39.00},"idle_left":{"left_pct":16.40,"top_pct":4.43,"width_pct":48.90},"idle_right":{"left_pct":31.39,"top_pct":4.44,"width_pct":48.72},"walk_a":{"left_pct":10.00,"top_pct":-3.69,"width_pct":29.82},"walk_b":{"left_pct":10.00,"top_pct":-3.73,"width_pct":29.82},"walk_a_right":{"left_pct":0.00,"top_pct":-3.69,"width_pct":29.82},"walk_b_right":{"left_pct":0.00,"top_pct":-3.73,"width_pct":29.82}}},"fairy_crown":{"layer":"front","allow_overflow":true,"poses":{"portrait":{"left_pct":-3.95,"top_pct":2.80,"width_pct":92.94},"portrait_blink":{"left_pct":-3.75,"top_pct":2.80,"width_pct":92.94},"eating":{"left_pct":-3.98,"top_pct":2.92,"width_pct":93.59},"happy":{"left_pct":-3.95,"top_pct":2.80,"width_pct":93.00},"groom":{"left_pct":-3.31,"top_pct":10.59,"width_pct":77.78},"sleep":{"left_pct":-3.00,"top_pct":3.00,"width_pct":68.00},"idle_left":{"left_pct":-3.99,"top_pct":10.70,"width_pct":93.87},"idle_right":{"left_pct":11.07,"top_pct":10.69,"width_pct":93.52},"walk_a":{"left_pct":-2.43,"top_pct":2.57,"width_pct":57.25},"walk_b":{"left_pct":-2.43,"top_pct":2.60,"width_pct":57.25}}},"acorn_bell":{"layer":"front","poses":{"portrait":{"left_pct":17.94,"top_pct":56.05,"width_pct":48.44},"portrait_blink":{"left_pct":18.14,"top_pct":56.05,"width_pct":48.44},"eating":{"left_pct":18.07,"top_pct":58.43,"width_pct":48.78},"happy":{"left_pct":17.95,"top_pct":56.04,"width_pct":48.47},"groom":{"left_pct":15.01,"top_pct":57.42,"width_pct":40.54},"sleep":{"left_pct":46.00,"top_pct":55.00,"width_pct":28.00},"idle_left":{"left_pct":18.12,"top_pct":59.69,"width_pct":48.92},"idle_right":{"left_pct":33.10,"top_pct":59.50,"width_pct":48.74},"walk_a":{"left_pct":11.05,"top_pct":51.44,"width_pct":29.84},"walk_b":{"left_pct":11.05,"top_pct":52.00,"width_pct":29.84}}},"daisy_collar":{"layer":"front","poses":{"portrait":{"left_pct":8.20,"top_pct":52.17,"width_pct":69.68},"portrait_blink":{"left_pct":8.40,"top_pct":52.17,"width_pct":69.68},"eating":{"left_pct":8.26,"top_pct":54.39,"width_pct":70.17},"happy":{"left_pct":8.21,"top_pct":52.16,"width_pct":69.72},"groom":{"left_pct":6.86,"top_pct":54.01,"width_pct":58.31},"sleep":{"left_pct":43.00,"top_pct":57.00,"width_pct":35.00},"idle_left":{"left_pct":8.28,"top_pct":56.12,"width_pct":70.38},"idle_right":{"left_pct":23.30,"top_pct":55.95,"width_pct":70.12},"walk_a":{"left_pct":5.05,"top_pct":47.88,"width_pct":42.92},"walk_b":{"left_pct":5.05,"top_pct":48.40,"width_pct":42.92}}},"berry_bandana":{"layer":"front","poses":{"portrait":{"left_pct":13.70,"top_pct":52.05,"width_pct":67.60},"portrait_blink":{"left_pct":13.90,"top_pct":52.05,"width_pct":67.60},"eating":{"left_pct":13.80,"top_pct":54.26,"width_pct":68.08},"happy":{"left_pct":13.71,"top_pct":52.04,"width_pct":67.64},"groom":{"left_pct":11.47,"top_pct":53.90,"width_pct":56.57},"sleep":{"left_pct":47.00,"top_pct":58.00,"width_pct":32.00},"idle_left":{"left_pct":13.84,"top_pct":56.01,"width_pct":68.27},"idle_right":{"left_pct":28.83,"top_pct":55.84,"width_pct":68.02},"walk_a":{"left_pct":8.44,"top_pct":47.77,"width_pct":41.64},"walk_b":{"left_pct":8.44,"top_pct":48.29,"width_pct":41.64}}},"moon_charm":{"layer":"front","poses":{"portrait":{"left_pct":12.45,"top_pct":54.33,"width_pct":60.31},"portrait_blink":{"left_pct":12.65,"top_pct":54.33,"width_pct":60.31},"eating":{"left_pct":12.54,"top_pct":56.64,"width_pct":60.73},"happy":{"left_pct":12.46,"top_pct":54.32,"width_pct":60.35},"groom":{"left_pct":10.42,"top_pct":55.91,"width_pct":50.47},"sleep":{"left_pct":48.00,"top_pct":58.00,"width_pct":30.00},"idle_left":{"left_pct":12.57,"top_pct":58.11,"width_pct":60.91},"idle_right":{"left_pct":27.58,"top_pct":57.93,"width_pct":60.69},"walk_a":{"left_pct":7.67,"top_pct":49.86,"width_pct":37.15},"walk_b":{"left_pct":7.67,"top_pct":50.41,"width_pct":37.15}}},"magic_scarf":{"layer":"front","poses":{"portrait":{"left_pct":9.03,"top_pct":52.05,"width_pct":90.65},"portrait_blink":{"left_pct":9.23,"top_pct":52.05,"width_pct":90.65},"eating":{"left_pct":9.09,"top_pct":54.26,"width_pct":91.29},"happy":{"left_pct":9.04,"top_pct":52.04,"width_pct":90.71},"groom":{"left_pct":7.56,"top_pct":53.90,"width_pct":75.86},"sleep":{"left_pct":45.00,"top_pct":57.00,"width_pct":36.00},"idle_left":{"left_pct":9.12,"top_pct":56.01,"width_pct":91.55},"idle_right":{"left_pct":24.13,"top_pct":55.84,"width_pct":91.22},"walk_a":{"left_pct":5.56,"top_pct":47.77,"width_pct":55.84},"walk_b":{"left_pct":5.56,"top_pct":48.29,"width_pct":55.84}}},"rainbow_wings":{"layer":"rear","allow_overflow":true,"poses":{"portrait":{"left_pct":-33.30,"top_pct":18.30,"width_pct":147.50},"portrait_blink":{"left_pct":-33.10,"top_pct":18.30,"width_pct":147.50},"eating":{"left_pct":-33.53,"top_pct":19.08,"width_pct":148.54},"happy":{"left_pct":-33.32,"top_pct":18.30,"width_pct":147.59},"groom":{"left_pct":-27.87,"top_pct":24.22,"width_pct":123.44},"sleep":{"left_pct":-20.00,"top_pct":8.00,"width_pct":140.00},"idle_left":{"left_pct":-33.63,"top_pct":24.96,"width_pct":148.97},"idle_right":{"left_pct":-18.46,"top_pct":24.90,"width_pct":148.42},"walk_a":{"left_pct":-20.51,"top_pct":16.79,"width_pct":90.85},"walk_b":{"left_pct":-20.51,"top_pct":16.98,"width_pct":90.85}}}}};
 const POSE_SPECIFIC_MAP = {"version":"v18","bath_accessories_visible":false,"accessories":{"acorn_bell":["eating","groom","sleep"],"berry_bandana":["groom","sleep","walk_a","walk_b"],"daisy_collar":["groom","sleep","walk_a","walk_b"],"fairy_crown":["sleep","walk_a","walk_b"],"magic_scarf":["groom","sleep","walk_a","walk_b"],"moon_charm":["eating","groom","happy","idle_left","idle_right","portrait","portrait_blink","sleep","walk_a","walk_b"],"rainbow_wings":["sleep","walk_a","walk_b"]},"generic_overlay_only":["leaf_clip","star_bow","forest_hat"]};
 const ROOM_STATE_POSE_KEYS_ = { sitting: 'portrait', grooming: 'groom', sleeping: 'sleep' };
 // sitting/grooming/sleeping 各自唯一對應的「沒有配件時」原圖路徑，直接寫死對照表，
@@ -3862,6 +3873,10 @@ function applyOverlayToImg_(overlayImg, baseImg, poseKey, layerClass) {
   const accessory = ACCESSORY_MANIFEST.accessories[accessoryId];
   const poseData = accessory && accessory.poses[poseKey];
   if (!accessory || !poseData) { overlayImg.style.display = 'none'; return; }
+  // {"hidden":true}（目前只有 leaf_clip 的 walk_a_right/walk_b_right 用到）：
+  // Ally 確認過，往右走時這隻耳朵應該轉到背面被貓咪頭部擋住，比硬擠出一個
+  // 「看起來也不像貼在耳朵上」的位置更自然，所以直接不顯示，不用另外算座標。
+  if (poseData.hidden) { overlayImg.style.display = 'none'; return; }
 
   const container = baseImg.parentElement;
   const rect = computeContainRect_(container, baseImg);
@@ -3880,9 +3895,16 @@ function applyOverlayToImg_(overlayImg, baseImg, poseKey, layerClass) {
 // pose_specific 全幀圖優先於一般透明疊圖（README_DEPLOYMENT.md 第 12 條、
 // POSE_SPECIFIC_MAP.json 的 priority_rule）：整張換成已經合成好貓咪+配件的圖，
 // 這種情況下疊圖要隱藏，不能疊兩次。
-function applyPoseSlot_(baseImg, overlayImg, poseKey, fallbackSrc) {
+// overlayPoseKey：只有走路往右這個特例會傳跟 poseKey 不同的值（見
+// applyAccessoryForState_）。poseKey 本身還是負責判斷要不要換成 pose_specific
+// 全幀合成圖（那份清單只認 'walk_a'/'walk_b' 這種原始姿勢名稱，不能改傳
+// 'walk_a_right' 這種，不然 moon_charm 這類已經有全幀合成圖的配件在往右走時
+// 會找不到對應清單、被誤判成一般透明疊圖）；overlayPoseKey 只用來決定「一般
+// 透明疊圖」這條路徑要套用 ACCESSORY_MANIFEST 裡哪一組座標。
+function applyPoseSlot_(baseImg, overlayImg, poseKey, fallbackSrc, overlayPoseKey) {
   const accessoryId = effectiveEquippedAccessoryId_();
   const specificList = accessoryId && POSE_SPECIFIC_MAP.accessories[accessoryId];
+  const overlayKey = overlayPoseKey || poseKey;
   if (accessoryId && specificList && specificList.indexOf(poseKey) !== -1) {
     baseImg.src = 'pose_specific/' + accessoryId + '/' + poseKey + '.png';
     if (overlayImg) overlayImg.style.display = 'none';
@@ -3895,7 +3917,7 @@ function applyPoseSlot_(baseImg, overlayImg, poseKey, fallbackSrc) {
     baseImg.decode().then(function () {
       if (baseImg.getAttribute('src') !== fallbackSrc) return;
       if (effectiveEquippedAccessoryId_() !== expectedAccessoryId) return;
-      applyOverlayToImg_(overlayImg, baseImg, poseKey, '');
+      applyOverlayToImg_(overlayImg, baseImg, overlayKey, '');
     }).catch(function () {
       if (overlayImg) overlayImg.style.display = 'none';
     });
@@ -3926,10 +3948,23 @@ async function renderPetRoomSittingFrame_(els, poseKey, fallbackSrc, sequence) {
   return true;
 }
 
+// 往右走（petRoomFacing===-1，#pet-room-flip 套用 scaleX(-1)）時，如果配件本身
+// 有校準過 'walk_a_right'/'walk_b_right' 這組專用座標，就改用它——目前只有
+// leaf_clip 有，讓髮夾往右走時貼在靠鼻子那隻耳朵（Ally 確認過的要求）；其餘
+// 配件沒有這組資料，直接沿用原本 'walk_a'/'walk_b'（跟著身體一起鏡像，維持
+// 原本行為不變），不會因為找不到專屬資料就被誤判成隱藏。
+function walkOverlayPoseKey_(baseKey) {
+  if (petRoomFacing !== -1) return baseKey;
+  const accessoryId = effectiveEquippedAccessoryId_();
+  const accessory = accessoryId && ACCESSORY_MANIFEST.accessories[accessoryId];
+  const rightKey = baseKey + '_right';
+  return (accessory && accessory.poses[rightKey]) ? rightKey : baseKey;
+}
+
 function applyAccessoryForState_(els, state) {
   if (state === 'walking') {
-    applyPoseSlot_(els.walkA, els.walkAccA, 'walk_a', 'img/pet/cat_walk_a.png');
-    applyPoseSlot_(els.walkB, els.walkAccB, 'walk_b', 'img/pet/cat_walk_b.png');
+    applyPoseSlot_(els.walkA, els.walkAccA, 'walk_a', 'img/pet/cat_walk_a.png', walkOverlayPoseKey_('walk_a'));
+    applyPoseSlot_(els.walkB, els.walkAccB, 'walk_b', 'img/pet/cat_walk_b.png', walkOverlayPoseKey_('walk_b'));
   } else if (state === 'idle') {
     applyPoseSlot_(els.idleA, els.idleAccA, 'idle_left', 'img/pet/cat_idle_left.png');
     applyPoseSlot_(els.idleB, els.idleAccB, 'idle_right', 'img/pet/cat_idle_right.png');
@@ -3966,9 +4001,13 @@ function setPetPortraitImage(src) {
   if (!portrait) return;
   const acc = document.getElementById('pet-portrait-acc');
   const poseKey = PET_PORTRAIT_POSE_KEY_BY_SRC_[src];
-  if (poseKey && acc) { applyPoseSlot_(portrait, acc, poseKey, src); return; }
-  portrait.src = src;
-  if (acc) acc.style.display = 'none';
+  if (poseKey && acc) applyPoseSlot_(portrait, acc, poseKey, src);
+  else { portrait.src = src; if (acc) acc.style.display = 'none'; }
+  // applyPoseSlot_ 同步就把最終 src 定下來了（pose_specific 全幀圖或原本的
+  // fallbackSrc），這裡可以直接讀 portrait.src 判斷目前顯示的到底是哪張圖，
+  // 只有普通版 cat_portrait.png 需要位移置中，其餘一律不套用。
+  const wrap = document.getElementById('pet-portrait-wrap');
+  if (wrap) wrap.classList.toggle('portrait-face-shift', /(^|\/)cat_portrait\.png$/.test(portrait.src));
 }
 
 // ── 餵食彈窗的真閉眼眨眼（換整張臉圖，不是 CSS 擠壓）──
