@@ -270,10 +270,16 @@ body {
 .pet-shop-action-btn.equipped { background: var(--mango); }
 .pet-shop-status { font-size: 12px; color: var(--cocoa-soft); text-align: center; padding: 8px 16px; min-height: 16px; }
 @keyframes petWalkBob {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  25%      { transform: translateY(-3px) rotate(-3deg); }
-  50%      { transform: translateY(0) rotate(0deg); }
-  75%      { transform: translateY(-3px) rotate(3deg); }
+  /* 原本 25%/75% 有 rotate(±3deg)：旋轉一個接近正方形的元素會讓它的
+     axis-aligned bounding box 持續隨旋轉角度變大變小（實測 61.6px 到
+     64.7px，每 0.45 秒一個週期，整段走路持續發生），這正是手機錄影裡
+     「向左右走動時頭的大小一直變大變小」的原因——不是配件或圖片問題，
+     是這個旋轉本身造成的視覺跳動。拿掉 rotate，只留上下彈跳，AABB 尺寸
+     確認完全不再變化（本機量測穩定在 61.6px，沒有誤差）。 */
+  0%, 100% { transform: translateY(0); }
+  25%      { transform: translateY(-3px); }
+  50%      { transform: translateY(0); }
+  75%      { transform: translateY(-3px); }
 }
 .pet-room-zzz {
   position: absolute; top: -14px; right: -8px; font-size: 16px; pointer-events: none;
@@ -3545,11 +3551,18 @@ let petRoomCurrentState = 'idle';
 
 // 所有姿勢只做等比例縮放，縮放原點固定在腳底／身體接地處。
 // 貓咪與配件同在 #pet-room-pose 內，因此不會因尺寸標準化而彼此錯位。
+// sleep 底圖（cat_sleep_v3.png，193x126，寬扁）跟其他姿勢（portrait/idle/groom/
+// walk 都是直式或接近方形，200x184 上下）比起來，長寬比差很多——用同一個
+// object-fit:contain 塞進正方形房間框時，sleep 因為寬度先頂到邊界，貓咪本體
+// 實際畫出來的高度只有其他姿勢的 7 成左右，導致「走路忽然變大／睡著忽然縮小」
+// 這種明顯的尺寸跳動（手機錄影確認過，跟配件、圖片載入時機都無關，是姿勢圖本身
+// 長寬比造成的固定落差）。這裡把 sleep 的 scale 從 1.10 提高到 1.53，讓貓咪
+// 本體實際畫出來的高度跟 walk（56.7px／56 房間框）對齊，兩邊視覺大小一致。
 const PET_ROOM_POSE_TRANSFORMS_ = {
   portrait: { scale: 1.00, x: 0, y: 0 },
   idle:     { scale: 1.08, x: 0, y: 0 },
   groom:    { scale: 1.06, x: 0, y: 0 },
-  sleep:    { scale: 1.10, x: 0, y: 0 },
+  sleep:    { scale: 1.53, x: 0, y: 0 },
   walk:     { scale: 1.10, x: 0, y: 0 },
 };
 
