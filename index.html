@@ -3906,8 +3906,22 @@ function applyPoseSlot_(baseImg, overlayImg, poseKey, fallbackSrc, overlayPoseKe
   const specificList = accessoryId && POSE_SPECIFIC_MAP.accessories[accessoryId];
   const overlayKey = overlayPoseKey || poseKey;
   if (accessoryId && specificList && specificList.indexOf(poseKey) !== -1) {
-    baseImg.src = 'pose_specific/' + accessoryId + '/' + poseKey + '.png';
     if (overlayImg) overlayImg.style.display = 'none';
+    // 全幀合成圖跟眨眼切換（renderPetRoomSittingFrame_）用同一套做法：先用離屏
+    // Image 預載＋decode 目標圖，確定真的載入完成才把可見 <img> 的 src 換過去。
+    // 不同姿勢的合成圖畫布比例可能不同（例如翅膀睡覺攤開比較寬、走路收攏比較
+    // 窄），如果像以前直接同步換 src，新圖還沒真正解碼完成前，畫面可能暫時用
+    // 舊圖比例撐大/縮小，造成貓咪忽大忽小的視覺跳動——尤其配件本身合成畫布差異
+    // 越大（翅膀）越明顯，脖子類配件差異較小但也會有一點。
+    const targetSrc = 'pose_specific/' + accessoryId + '/' + poseKey + '.png';
+    const expectedState = petRoomCurrentState;
+    const preload = new Image();
+    preload.src = targetSrc;
+    preload.decode().then(function () {
+      if (petRoomCurrentState !== expectedState) return;
+      if (effectiveEquippedAccessoryId_() !== accessoryId) return;
+      baseImg.src = targetSrc;
+    }).catch(function () {});
   } else {
     baseImg.src = fallbackSrc;
     if (overlayImg) overlayImg.style.display = 'none';
