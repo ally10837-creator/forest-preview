@@ -193,13 +193,17 @@ body {
   transform-origin: 50% 100%; will-change: transform;
 }
 .pet-room-sprite { position: relative; width: 100%; height: 100%; }
-.pet-room-sprite.pet-room-walking { animation: petWalkBob 0.45s ease-in-out infinite; }
+.pet-room-sprite.pet-room-walking { animation: petWalkBob 0.5s ease-in-out infinite; }
 .pet-room-walkframes { position: absolute; inset: 0; }
+.pet-room-walk-pair { position: absolute; inset: 0; }
 .pet-room-frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-.pet-room-frame.frame-a { animation: petFrameA 0.5s steps(1) infinite; }
-.pet-room-frame.frame-b { animation: petFrameB 0.5s steps(1) infinite; }
-@keyframes petFrameA { 0%,49% { opacity: 1; } 50%,100% { opacity: 0; } }
-@keyframes petFrameB { 0%,49% { opacity: 0; } 50%,100% { opacity: 1; } }
+.pet-room-walk-pair.frame-a { animation: petFrameA 0.5s steps(1) infinite; }
+.pet-room-walk-pair.frame-b { animation: petFrameB 0.5s steps(1) infinite; }
+/* 走路 A/B 每一組都包含「貓咪底圖＋該幀配件」，改在共同父層一次切換 visibility。
+   不再讓四張重疊圖片各自切 opacity，避免 Safari 在切換邊界短暫合成出殘影，
+   也避免配件較晚 decode/display 時跟底圖的動畫相位不同步。 */
+@keyframes petFrameA { 0%,49% { visibility: visible; } 50%,100% { visibility: hidden; } }
+@keyframes petFrameB { 0%,49% { visibility: hidden; } 50%,100% { visibility: visible; } }
 /* 東張西望：左看/右看兩張圖交叉淡出，比走路的腳步慢很多，看起來像在慢慢左右張望 */
 .pet-room-idleframes { position: absolute; inset: 0; display: none; }
 .pet-room-idle-frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
@@ -214,9 +218,7 @@ body {
 .pet-accessory-overlay { position: absolute; pointer-events: none; display: none; }
 .pet-accessory-overlay.layer-front { z-index: 3; }
 .pet-accessory-overlay.layer-rear { z-index: 1; }
-.pet-room-frame.pet-accessory-overlay.frame-a,
 .pet-room-idle-frame.pet-accessory-overlay.frame-a { animation: petFrameA 0.5s steps(1) infinite; }
-.pet-room-frame.pet-accessory-overlay.frame-b,
 .pet-room-idle-frame.pet-accessory-overlay.frame-b { animation: petFrameB 0.5s steps(1) infinite; }
 .pet-room-idleframes .pet-accessory-overlay.frame-a { animation-name: petIdleFrameA; animation-duration: 2.8s; }
 .pet-room-idleframes .pet-accessory-overlay.frame-b { animation-name: petIdleFrameB; animation-duration: 2.8s; }
@@ -3508,7 +3510,7 @@ function renderForestPet(data) {
     return;
   }
   stopPetRoom();
-  el.innerHTML = `<div class="pet-room-outer"><div class="pet-room" id="pet-room"><div class="pet-room-wrap" id="pet-room-wrap" onclick="openPetZoom()"><div class="pet-room-flip" id="pet-room-flip"><div class="pet-room-sprite" id="pet-room-sprite"><div class="pet-room-walkframes" id="pet-room-walkframes"><img class="pet-room-frame frame-a" src="img/pet/cat_walk_a.png" alt=""><img class="pet-room-frame pet-accessory-overlay frame-a" id="pet-room-walk-acc-a" alt=""><img class="pet-room-frame frame-b" src="img/pet/cat_walk_b.png" alt=""><img class="pet-room-frame pet-accessory-overlay frame-b" id="pet-room-walk-acc-b" alt=""></div><div class="pet-room-idleframes" id="pet-room-idleframes"><img class="pet-room-idle-frame frame-a" src="img/pet/cat_idle_left.png" alt=""><img class="pet-room-idle-frame pet-accessory-overlay frame-a" id="pet-room-idle-acc-a" alt=""><img class="pet-room-idle-frame frame-b" src="img/pet/cat_idle_right.png" alt=""><img class="pet-room-idle-frame pet-accessory-overlay frame-b" id="pet-room-idle-acc-b" alt=""></div><img class="pet-room-static" id="pet-room-static" src="img/pet/cat_portrait.png" alt="貓咪"><img class="pet-accessory-overlay" id="pet-room-static-acc" alt=""></div></div></div></div><div class="pet-room-name" id="pet-room-name"></div><div class="pet-room-status" id="pet-room-status">點點貓咪，可以摸摸牠喔！</div><!-- TEST_ONLY_BEGIN：以下這個區塊只給部署前覆核／本機測試用，不是正式功能。
+  el.innerHTML = `<div class="pet-room-outer"><div class="pet-room" id="pet-room"><div class="pet-room-wrap" id="pet-room-wrap" onclick="openPetZoom()"><div class="pet-room-flip" id="pet-room-flip"><div class="pet-room-sprite" id="pet-room-sprite"><div class="pet-room-walkframes" id="pet-room-walkframes"><div class="pet-room-walk-pair frame-a"><img class="pet-room-frame frame-a" src="img/pet/cat_walk_a.png" alt=""><img class="pet-room-frame pet-accessory-overlay frame-a" id="pet-room-walk-acc-a" alt=""></div><div class="pet-room-walk-pair frame-b"><img class="pet-room-frame frame-b" src="img/pet/cat_walk_b.png" alt=""><img class="pet-room-frame pet-accessory-overlay frame-b" id="pet-room-walk-acc-b" alt=""></div></div><div class="pet-room-idleframes" id="pet-room-idleframes"><img class="pet-room-idle-frame frame-a" src="img/pet/cat_idle_left.png" alt=""><img class="pet-room-idle-frame pet-accessory-overlay frame-a" id="pet-room-idle-acc-a" alt=""><img class="pet-room-idle-frame frame-b" src="img/pet/cat_idle_right.png" alt=""><img class="pet-room-idle-frame pet-accessory-overlay frame-b" id="pet-room-idle-acc-b" alt=""></div><img class="pet-room-static" id="pet-room-static" src="img/pet/cat_portrait.png" alt="貓咪"><img class="pet-accessory-overlay" id="pet-room-static-acc" alt=""></div></div></div></div><div class="pet-room-name" id="pet-room-name"></div><div class="pet-room-status" id="pet-room-status">點點貓咪，可以摸摸牠喔！</div><!-- TEST_ONLY_BEGIN：以下這個區塊只給部署前覆核／本機測試用，不是正式功能。
      若這段 HTML 被整份複製到 forest（正式站）repo，TEST_ONLY_applyHostGuard_()
      會在非 localhost / forest-preview 網域時把這個區塊強制 display:none，
      且 TEST_ONLY_setAccessory_() 本體也會拒絕在不允許的網域上生效（雙重防護，
@@ -3922,7 +3924,13 @@ function applyPoseSlot_(baseImg, overlayImg, poseKey, fallbackSrc, overlayPoseKe
   const accessoryId = effectiveEquippedAccessoryId_();
   const specificList = accessoryId && POSE_SPECIFIC_MAP.accessories[accessoryId];
   const overlayKey = overlayPoseKey || poseKey;
-  if (accessoryId && specificList && specificList.indexOf(poseKey) !== -1) {
+  // 彩虹翅膀的 walk_a/walk_b 全幀圖曾把不同尺寸的「貓咪＋翅膀」一起換掉，
+  // 導致走路 A/B 切換時連貓咪頭部輪廓也跟著脈動。走路時改用不可變的原始
+  // cat_walk_a/b 底圖，再依既有 manifest 座標把翅膀畫在 rear layer；只換翅膀，
+  // 不再由配件素材替換貓咪本體。其他配件／姿勢仍完全遵守 POSE_SPECIFIC_MAP。
+  const forceRainbowWalkOverlay = accessoryId === 'rainbow_wings' &&
+    (poseKey === 'walk_a' || poseKey === 'walk_b');
+  if (!forceRainbowWalkOverlay && accessoryId && specificList && specificList.indexOf(poseKey) !== -1) {
     if (overlayImg) overlayImg.style.display = 'none';
     // 全幀合成圖跟眨眼切換（renderPetRoomSittingFrame_）用同一套做法：先用離屏
     // Image 預載＋decode 目標圖，確定真的載入完成才把可見 <img> 的 src 換過去。
