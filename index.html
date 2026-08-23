@@ -3920,14 +3920,45 @@ function applyOverlayToImg_(overlayImg, baseImg, poseKey, layerClass) {
 // 'walk_a_right' 這種，不然 moon_charm 這類已經有全幀合成圖的配件在往右走時
 // 會找不到對應清單、被誤判成一般透明疊圖）；overlayPoseKey 只用來決定「一般
 // 透明疊圖」這條路徑要套用 ACCESSORY_MANIFEST 裡哪一組座標。
+// 彩虹翅膀走路專用的「純翅膀」透明疊圖：從 Ally 核准過的舊版全幀合成圖
+// （pose_specific/rainbow_wings/walk_a.png／walk_b.png）逐像素比對現在不可變的
+// cat_walk_a/b.png 底圖，只保留「舊圖有、底圖沒有」的像素（也就是翅膀本身，
+// 貓咪像素完全排除），畫布尺寸跟對應的 cat_walk_a/b.png 完全一致，所以不用
+// manifest 的 left_pct/top_pct/width_pct 換算，直接跟底圖一樣鋪滿容器
+// （inset:0 + object-fit:contain）就能天然對齊、正確接在背部——翅膀造型、
+// 角度、大小、根部位置都跟核准圖一致，因為像素就是同一份。
+function applyRainbowWalkWing_(overlayImg, poseKey, expectedAccessoryId, expectedState) {
+  if (!overlayImg) return;
+  const targetSrc = 'pose_specific/rainbow_wings/' + poseKey + '_wing_only.png';
+  const preload = new Image();
+  preload.src = targetSrc;
+  preload.decode().then(function () {
+    if (petRoomCurrentState !== expectedState) return;
+    if (effectiveEquippedAccessoryId_() !== expectedAccessoryId) return;
+    overlayImg.classList.remove('layer-front', 'layer-rear');
+    overlayImg.classList.add('layer-rear');
+    overlayImg.style.left = '';
+    overlayImg.style.top = '';
+    overlayImg.style.width = '';
+    overlayImg.style.height = '';
+    overlayImg.style.transform = '';
+    overlayImg.style.transformOrigin = '';
+    overlayImg.src = targetSrc;
+    overlayImg.style.display = 'block';
+  }).catch(function () {
+    if (overlayImg) overlayImg.style.display = 'none';
+  });
+}
+
 function applyPoseSlot_(baseImg, overlayImg, poseKey, fallbackSrc, overlayPoseKey) {
   const accessoryId = effectiveEquippedAccessoryId_();
   const specificList = accessoryId && POSE_SPECIFIC_MAP.accessories[accessoryId];
   const overlayKey = overlayPoseKey || poseKey;
   // 彩虹翅膀的 walk_a/walk_b 全幀圖曾把不同尺寸的「貓咪＋翅膀」一起換掉，
   // 導致走路 A/B 切換時連貓咪頭部輪廓也跟著脈動。走路時改用不可變的原始
-  // cat_walk_a/b 底圖，再依既有 manifest 座標把翅膀畫在 rear layer；只換翅膀，
-  // 不再由配件素材替換貓咪本體。其他配件／姿勢仍完全遵守 POSE_SPECIFIC_MAP。
+  // cat_walk_a/b 底圖，翅膀改用從核准圖萃取出的純翅膀透明圖（見
+  // applyRainbowWalkWing_）疊在 rear layer；只換翅膀，不再由配件素材替換
+  // 貓咪本體。其他配件／姿勢仍完全遵守 POSE_SPECIFIC_MAP。
   const forceRainbowWalkOverlay = accessoryId === 'rainbow_wings' &&
     (poseKey === 'walk_a' || poseKey === 'walk_b');
   if (!forceRainbowWalkOverlay && accessoryId && specificList && specificList.indexOf(poseKey) !== -1) {
@@ -3953,10 +3984,15 @@ function applyPoseSlot_(baseImg, overlayImg, poseKey, fallbackSrc, overlayPoseKe
     // 換姿勢時 naturalWidth/naturalHeight 可能暫時仍屬於上一張圖；等新底圖 decode
     // 完成後再依該姿勢畫布計算配件座標，避免項鍊／領巾短暫漂浮或永久套到舊比例。
     const expectedAccessoryId = accessoryId;
+    const expectedState = petRoomCurrentState;
     baseImg.decode().then(function () {
       if (baseImg.getAttribute('src') !== fallbackSrc) return;
       if (effectiveEquippedAccessoryId_() !== expectedAccessoryId) return;
-      applyOverlayToImg_(overlayImg, baseImg, overlayKey, '');
+      if (forceRainbowWalkOverlay) {
+        applyRainbowWalkWing_(overlayImg, poseKey, expectedAccessoryId, expectedState);
+      } else {
+        applyOverlayToImg_(overlayImg, baseImg, overlayKey, '');
+      }
     }).catch(function () {
       if (overlayImg) overlayImg.style.display = 'none';
     });
