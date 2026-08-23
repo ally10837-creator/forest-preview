@@ -2891,6 +2891,15 @@ async function refreshPetAccessoryEquipState_(childId) {
 
 function openPetShop() {
   document.getElementById('pet-shop-modal').style.display = 'flex';
+  // 效能修正：先前每次開商店都會先把畫面清成「載入中…」再等 getPetEconomyData
+  // 回來，即使上一次已經讀過這個孩子的資料也一樣，讓開商店感覺總是要重新等一次
+  // 網路。如果上次已經有讀到過的資料，先用它立即畫出清單（讓使用者馬上看到東西），
+  // 再照舊在背景打 refreshPetShop_() 確認最新狀態；沒有快取資料的情況（第一次開、
+  // 或剛清空過）維持原本「載入中…」的行為不變。
+  if (petShopLastResult_) {
+    renderPetShopList_(petShopLastResult_);
+    setPetShopStatus_(petShopLastResult_.blocked ? '⚠️ 後端目前有其他寵物交易處理中，暫時無法穿戴／更換配件。' : '');
+  }
   void refreshPetShop_();
 }
 function closePetShop() {
@@ -2937,14 +2946,27 @@ async function refreshPetShop_() {
     resetPetAccessoryEquipState_();
     return;
   }
-  statusEl.textContent = '載入中…';
+  // 效能修正：只有「這次還沒有任何已知資料可以先顯示」才用「載入中…」蓋住畫面；
+  // 已經有上次讀到的資料時（openPetShop() 已經先畫出來了），背景刷新不打斷畫面，
+  // 避免每次開商店/每次穿戴完都閃一下「載入中」。
+  const hadCachedResult = !!petShopLastResult_;
+  if (!hadCachedResult) statusEl.textContent = '載入中…';
   const res = await callPhase2A('getPetEconomyData', { childId, deviceToken: token });
   if (currentChild !== childId) return;
   if (!res.ok || !validatePetEconomyResult_(res.result)) {
-    balanceEl.textContent = ''; listEl.innerHTML = '';
     const reason = !res.ok ? petShopErrorMessage_(res) : petShopErrorMessage_({ error: 'invalid_response_shape' });
-    statusEl.textContent = '讀取失敗（' + reason + '），未顯示任何配件狀態，也不會假設目前穿了什麼。';
-    resetPetAccessoryEquipState_();
+    if (!hadCachedResult) {
+      // 沒有任何已知資料可以退回去顯示——維持原本「fail closed」行為：清空畫面、
+      // 不假設任何穿戴狀態。
+      balanceEl.textContent = ''; listEl.innerHTML = '';
+      statusEl.textContent = '讀取失敗（' + reason + '），未顯示任何配件狀態，也不會假設目前穿了什麼。';
+      resetPetAccessoryEquipState_();
+    } else {
+      // 已經有上次確認過的真實資料：背景刷新失敗不清空、不動搖使用者目前看到的
+      // 清單（那份資料本身仍然是真的讀到過的，只是可能不是最新的），只提示這次
+      // 更新沒有成功，商店按鈕邏輯完全不受影響（petShopTxBusy_ 等狀態沒有被動到）。
+      statusEl.textContent = '⚠️ 更新失敗（' + reason + '），目前顯示的是上次讀到的資料。';
+    }
     return;
   }
   petShopLastResult_ = res.result;
@@ -3883,8 +3905,14 @@ function computeContainRect_(container, imgEl) {
 }
 
 function applyOverlayToImg_(overlayImg, baseImg, poseKey, layerClass) {
-  const accessoryId = effectiveEquippedAccessoryId_();
   if (!overlayImg || !baseImg) return;
+  // 每次呼叫都先發一個新序號，讓任何「這次呼叫還在等 decode()」的舊呼叫，事後
+  // 發現自己已經不是這顆疊圖元素最新一次呼叫時能夠放棄，不會蓋掉更新的（甚至
+  // 是同步就決定好的）結果。姿勢/朝向切換很頻繁時（例如走路瞬間從朝左變朝右），
+  // 舊底圖的 src 可能完全沒變（朝向只是外層 CSS transform，不是換底圖），所以不能
+  // 只靠比對 baseImg src 判斷是否過期，一定要靠這顆元素自己的呼叫序號。
+  const applyToken = (overlayImg.__overlayApplyToken = (overlayImg.__overlayApplyToken || 0) + 1);
+  const accessoryId = effectiveEquippedAccessoryId_();
   if (!accessoryId || ACCESSORY_MANIFEST.hidden_states.indexOf(poseKey) !== -1) {
     overlayImg.style.display = 'none';
     return;
@@ -3899,16 +3927,43 @@ function applyOverlayToImg_(overlayImg, baseImg, poseKey, layerClass) {
 
   const container = baseImg.parentElement;
   const rect = computeContainRect_(container, baseImg);
-  overlayImg.classList.remove('layer-front', 'layer-rear');
-  overlayImg.classList.add(accessory.layer === 'rear' ? 'layer-rear' : 'layer-front');
-  overlayImg.src = 'img/pet/accessories/' + accessoryId + '.png';
-  overlayImg.style.left = (rect.x + poseData.left_pct / 100 * rect.w) + 'px';
-  overlayImg.style.top = (rect.y + poseData.top_pct / 100 * rect.h) + 'px';
-  overlayImg.style.width = (poseData.width_pct / 100 * rect.w) + 'px';
-  overlayImg.style.height = 'auto';
-  overlayImg.style.transform = poseData.mirror_x ? 'scaleX(-1)' : '';
-  overlayImg.style.transformOrigin = 'center';
-  overlayImg.style.display = 'block';
+  const targetSrc = 'img/pet/accessories/' + accessoryId + '.png';
+  const layerClassName = accessory.layer === 'rear' ? 'layer-rear' : 'layer-front';
+  const left = (rect.x + poseData.left_pct / 100 * rect.w) + 'px';
+  const top = (rect.y + poseData.top_pct / 100 * rect.h) + 'px';
+  const width = (poseData.width_pct / 100 * rect.w) + 'px';
+  const transform = poseData.mirror_x ? 'scaleX(-1)' : '';
+
+  const applyNow_ = function () {
+    overlayImg.classList.remove('layer-front', 'layer-rear');
+    overlayImg.classList.add(layerClassName);
+    overlayImg.src = targetSrc;
+    overlayImg.style.left = left;
+    overlayImg.style.top = top;
+    overlayImg.style.width = width;
+    overlayImg.style.height = 'auto';
+    overlayImg.style.transform = transform;
+    overlayImg.style.transformOrigin = 'center';
+    overlayImg.style.display = 'block';
+  };
+
+  // 效能修正：換配件時（尤其是剛穿戴完，這張配件圖是第一次要用到）先離屏預載+
+  // decode 再一次換上，避免瀏覽器在還沒抓到新配件圖片的那個瞬間短暫顯示空白，
+  // 讓「換裝完成」看起來更乾脆。已經快取過的圖 decode() 幾乎立即 resolve，不影響
+  // 一般情況（配件沒變、只是姿勢在跳動）的即時性。
+  if (overlayImg.getAttribute('src') === targetSrc && overlayImg.complete) {
+    applyNow_();
+    return;
+  }
+  const preload = new Image();
+  preload.src = targetSrc;
+  preload.decode().then(function () {
+    if (overlayImg.__overlayApplyToken !== applyToken) return; // 這期間又有更新的呼叫，放棄
+    applyNow_();
+  }).catch(function () {
+    if (overlayImg.__overlayApplyToken !== applyToken) return;
+    overlayImg.style.display = 'none';
+  });
 }
 
 // pose_specific 全幀圖優先於一般透明疊圖（README_DEPLOYMENT.md 第 12 條、
