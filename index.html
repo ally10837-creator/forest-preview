@@ -2283,6 +2283,7 @@ const SUB_TAB_IDS = ['menu','chores','orders','penalty','bank','forestpet'];
 const _pendingPenaltyAudioFromNavigation = new Set();
 function switchSubTab(tab, userInitiated = true) {
   cancelPendingVoiceSequence(); // Audio UX v1.0：切分頁時取消尚未播放的延遲 Voice
+  if (tab !== 'forestpet') closePetShop();
   currentSubTab = tab;
   if (tab === 'penalty' && userInitiated) {
     _pendingPenaltyAudioFromNavigation.add(currentChild);
@@ -2822,6 +2823,10 @@ let petShopTxBusy_ = false; // 目前是否有一筆購買或穿戴請求在飛�
 let petShopTxKind_ = null; // 'buy' | 'equip' | null，只用來畫「購買中…」/「穿戴中…」文字
 let petShopTxTargetId_ = null; // 飛行中那筆請求的 accessory_id，只用來畫文字
 let petShopRequestSeq_ = 0; // 每次商店重新整理／發出購買或穿戴請求時遞增，讓過期回應能被辨識並安全丟棄，不污染目前孩子/畫面
+// 商店是否由使用者開啟。驚喜樹與背景資料刷新會重新建立整個森林夥伴 DOM；
+// 不能只依賴舊 modal 元素的 display，否則 DOM 一換掉，進行中的商店畫面就會
+// 被動消失。這個狀態只控制 UI 是否保持開啟，不影響任何交易或後端資料。
+let petShopOpen_ = false;
 
 function petShopErrorMessage_(res) {
   if (res.error === 'network_error' || res.error === 'internal_error') return '網路結果不確定，請再試一次';
@@ -2898,7 +2903,10 @@ async function refreshPetAccessoryEquipState_(childId) {
 }
 
 function openPetShop() {
-  document.getElementById('pet-shop-modal').style.display = 'flex';
+  petShopOpen_ = true;
+  const modal = document.getElementById('pet-shop-modal');
+  if (!modal) return;
+  modal.style.display = 'flex';
   // 效能修正：先前每次開商店都會先把畫面清成「載入中…」再等 getPetEconomyData
   // 回來，即使上一次已經讀過這個孩子的資料也一樣，讓開商店感覺總是要重新等一次
   // 網路。如果上次已經有讀到過的資料，先用它立即畫出清單（讓使用者馬上看到東西），
@@ -2916,8 +2924,23 @@ function closePetShop() {
   // 森林夥伴分頁就切孩子，getElementById 會回傳 null，直接讀 .style 會整個
   // 拋例外、中斷 switchChild() 後面的流程（包含 loadAll()）——一定要判斷存在。
   const modal = document.getElementById('pet-shop-modal');
+  petShopOpen_ = false;
+  if (modal) modal.style.display = 'none';
+}
+
+function restorePetShopAfterRender_() {
+  if (!petShopOpen_) return;
+  const modal = document.getElementById('pet-shop-modal');
   if (!modal) return;
-  modal.style.display = 'none';
+  modal.style.display = 'flex';
+  if (petShopLastResult_) renderPetShopList_(petShopLastResult_);
+  if (petShopTxBusy_) {
+    setPetShopStatus_(petShopTxKind_ === 'buy' ? '購買中，請稍候…' : '穿戴中，請稍候…');
+  } else if (petShopLastResult_) {
+    setPetShopStatus_(petShopLastResult_.blocked
+      ? '⚠️ 後端目前有其他寵物交易處理中，暫時無法穿戴／更換配件。'
+      : '');
+  }
 }
 
 // 交易「回應遺失但後端其實已寫入成功」時，本機 pending 只在使用者剛好再點同一張卡片
@@ -2945,9 +2968,10 @@ function reconcilePetPendingWithTruth_(childId, result) {
 async function refreshPetShop_() {
   const childId = currentChild;
   const readSeq = ++petEconomyReadSeq_;
-  const statusEl = document.getElementById('pet-shop-status');
-  const balanceEl = document.getElementById('pet-shop-balance');
-  const listEl = document.getElementById('pet-shop-list');
+  let statusEl = document.getElementById('pet-shop-status');
+  let balanceEl = document.getElementById('pet-shop-balance');
+  let listEl = document.getElementById('pet-shop-list');
+  if (!statusEl || !balanceEl || !listEl) return false;
   const token = localStorage.getItem(petDeviceTokenKey(childId));
   if (!token) {
     balanceEl.textContent = ''; listEl.innerHTML = '';
@@ -2962,6 +2986,12 @@ async function refreshPetShop_() {
   if (!hadCachedResult) statusEl.textContent = '載入中…';
   const res = await callPhase2A('getPetEconomyData', { childId, deviceToken: token });
   if (currentChild !== childId || readSeq !== petEconomyReadSeq_) return false;
+  // 等待網路期間森林夥伴可能因驚喜樹／loadAll 刷新而重建 DOM。後續一定要重新
+  // 取得目前畫面上的元素，不能把結果寫進已被移除的舊 modal。
+  statusEl = document.getElementById('pet-shop-status');
+  balanceEl = document.getElementById('pet-shop-balance');
+  listEl = document.getElementById('pet-shop-list');
+  if (!statusEl || !balanceEl || !listEl) return false;
   if (!res.ok || !validatePetEconomyResult_(res.result)) {
     const reason = !res.ok ? petShopErrorMessage_(res) : petShopErrorMessage_({ error: 'invalid_response_shape' });
     if (!hadCachedResult) {
@@ -3169,6 +3199,31 @@ function normalizePetBuyResponse_(res, pending) {
   return { ok: true, result: r };
 }
 
+// buyPetAccessory 的成功回應已代表後端交易完成，且上方 normalize 已驗證
+// accessory_id／價格／新餘額／數量。先把這些權威欄位同步到商店快取，讓餘額與
+// 「已擁有／穿戴」按鈕立即更新；完整 getPetEconomyData 仍在背景核對其餘欄位。
+// 這不屬於樂觀更新：只有後端明確回傳成功後才會執行。
+function applyPetAccessoryPurchaseTruth_(childId, buyResult) {
+  if (currentChild !== childId || !petShopLastResult_ || !Array.isArray(petShopLastResult_.accessories)) return false;
+  const target = petShopLastResult_.accessories.find(function (entry) {
+    return entry.accessory_id === buyResult.accessory_id;
+  });
+  if (!target) return false;
+  petShopLastResult_ = Object.assign({}, petShopLastResult_, {
+    balance: buyResult.new_balance,
+    accessories: petShopLastResult_.accessories.map(function (entry) {
+      if (entry.accessory_id !== buyResult.accessory_id) return entry;
+      return Object.assign({}, entry, {
+        price_coins: buyResult.price_coins,
+        owned: true,
+        equipped: false
+      });
+    })
+  });
+  renderPetShopList_(petShopLastResult_);
+  return true;
+}
+
 function handlePetBuyAuthError_(childId, res) {
   if (res.reason === 'credential_conflict') {
     setPetShopStatus_('⚠️ 裝置憑證資料需要人工核對，請聯絡管理員。');
@@ -3197,10 +3252,11 @@ async function resumePetBuy_(childId) {
     const normalized = normalizePetBuyResponse_(res, pending);
     if (!normalized.ok) { setPetShopStatus_('⚠️ 購買回應格式無法確認，已保留原請求，可再試一次。'); renderPetShopList_(petShopLastResult_); return; }
     clearPetBuyPending_(childId);
-    // 唯一真實狀態來源：重新讀一次 getPetEconomyData——買到的配件會在這次重新
-    // 讀取後自然變成「已擁有、未穿戴」，穿戴按鈕跟著打開，不是前端自己推算。
-    await refreshPetShop_();
-    if (currentChild === childId) setPetShopStatus_('✅ 購買成功！現在可以穿戴了。');
+    applyPetAccessoryPurchaseTruth_(childId, normalized.result);
+    setPetShopStatus_('✅ 購買成功！現在可以穿戴了，正在背景確認最新狀態…');
+    void refreshPetShop_().then(function (confirmed) {
+      if (confirmed && currentChild === childId) setPetShopStatus_('✅ 購買成功！現在可以穿戴了。');
+    });
     return;
   }
   if (res.error === 'invalid_token') { handlePetBuyAuthError_(childId, res); return; }
@@ -3263,8 +3319,10 @@ const PET_SHOP_ACCESSORY_IMAGE_WHITELIST_ = {
 };
 
 function renderPetShopList_(result) {
-  document.getElementById('pet-shop-balance').textContent = '目前代幣：' + result.balance;
+  const balance = document.getElementById('pet-shop-balance');
   const list = document.getElementById('pet-shop-list');
+  if (!balance || !list) return;
+  balance.textContent = '目前代幣：' + result.balance;
   list.innerHTML = '';
   result.accessories.forEach(function (a) {
     const card = document.createElement('div');
@@ -3565,6 +3623,9 @@ function renderForestPet(data) {
   }
   renderPetFood();
   startPetRoom();
+  // 驚喜樹／背景資料刷新會重建整個 forestpet-content；如果使用者正在商店內
+  // 購買或穿戴，立即把新 modal 恢復成開啟並重畫目前狀態，不能把使用者踢出去。
+  restorePetShopAfterRender_();
 }
 
 // ══════════════════════════════════════════════
