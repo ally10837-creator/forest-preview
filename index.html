@@ -2811,6 +2811,11 @@ function onEnterForestPet_() {
 // 前端自己推算。
 // ══════════════════════════════════════════════
 let petShopLastResult_ = null; // 最近一次通過驗證的 getPetEconomyData result，畫商店清單用
+// getPetEconomyData 可能同時由「進入森林夥伴」「開商店」「交易完成後確認」觸發。
+// 網路回應順序不保證等於送出順序；沒有序號防護時，較舊的「尚未穿戴」回應可能
+// 在穿戴成功之後才回來，把新狀態蓋回空字串。每次讀取都取得遞增序號，只允許
+// 最新一次讀取更新共用狀態。
+let petEconomyReadSeq_ = 0;
 let petShopTxBusy_ = false; // 目前是否有一筆購買或穿戴請求在飛行中（買/穿戴共用同一把鎖，鎖住所有按鈕）
 let petShopTxKind_ = null; // 'buy' | 'equip' | null，只用來畫「購買中…」/「穿戴中…」文字
 let petShopTxTargetId_ = null; // 飛行中那筆請求的 accessory_id，只用來畫文字
@@ -2863,6 +2868,7 @@ function validatePetEconomyResult_(result) {
 // 讀取失敗／沒有 token／格式不合法時，把畫面狀態明確歸零成「未穿戴」，不留
 // 上一次（甚至上一位孩子）的殘值，避免使用者以為看到的是目前真的穿戴狀態。
 function resetPetAccessoryEquipState_() {
+  petEconomyReadSeq_ += 1; // 讓所有仍在飛行中的舊配件狀態讀取立即失效
   petShopLastResult_ = null;
   petAccessoryEquippedId_ = '';
   // 任何「把配件狀態歸零成未知」的情境（切孩子、讀取失敗、token 失效）都必須
@@ -2874,19 +2880,19 @@ function resetPetAccessoryEquipState_() {
   petShopTxTargetId_ = null;
   const els = petRoomEls();
   if (els.room) applyAccessoryForState_(els, petRoomCurrentState);
+  refreshPetZoomAccessory_();
 }
 
 async function refreshPetAccessoryEquipState_(childId) {
+  const readSeq = ++petEconomyReadSeq_;
   const token = localStorage.getItem(petDeviceTokenKey(childId));
   if (!token) { if (currentChild === childId) resetPetAccessoryEquipState_(); return; }
   const res = await callPhase2A('getPetEconomyData', { childId, deviceToken: token });
-  if (currentChild !== childId) return; // 使用者可能已經切換孩子，不要用舊資料覆蓋畫面
+  if (currentChild !== childId || readSeq !== petEconomyReadSeq_) return; // 舊孩子／舊請求不得覆蓋新狀態
   if (!res.ok || !validatePetEconomyResult_(res.result)) { resetPetAccessoryEquipState_(); return; }
   petShopLastResult_ = res.result;
-  petAccessoryEquippedId_ = res.result.equipped_accessory_id || '';
+  applyPetAccessoryTruth_(childId, res.result.equipped_accessory_id || '');
   reconcilePetPendingWithTruth_(childId, res.result);
-  const els = petRoomEls();
-  if (els.room) applyAccessoryForState_(els, petRoomCurrentState);
 }
 
 function openPetShop() {
@@ -2936,6 +2942,7 @@ function reconcilePetPendingWithTruth_(childId, result) {
 
 async function refreshPetShop_() {
   const childId = currentChild;
+  const readSeq = ++petEconomyReadSeq_;
   const statusEl = document.getElementById('pet-shop-status');
   const balanceEl = document.getElementById('pet-shop-balance');
   const listEl = document.getElementById('pet-shop-list');
@@ -2944,7 +2951,7 @@ async function refreshPetShop_() {
     balanceEl.textContent = ''; listEl.innerHTML = '';
     statusEl.textContent = '尚未連結這台裝置，無法讀取真實配件狀態。';
     resetPetAccessoryEquipState_();
-    return;
+    return false;
   }
   // 效能修正：只有「這次還沒有任何已知資料可以先顯示」才用「載入中…」蓋住畫面；
   // 已經有上次讀到的資料時（openPetShop() 已經先畫出來了），背景刷新不打斷畫面，
@@ -2952,7 +2959,7 @@ async function refreshPetShop_() {
   const hadCachedResult = !!petShopLastResult_;
   if (!hadCachedResult) statusEl.textContent = '載入中…';
   const res = await callPhase2A('getPetEconomyData', { childId, deviceToken: token });
-  if (currentChild !== childId) return;
+  if (currentChild !== childId || readSeq !== petEconomyReadSeq_) return false;
   if (!res.ok || !validatePetEconomyResult_(res.result)) {
     const reason = !res.ok ? petShopErrorMessage_(res) : petShopErrorMessage_({ error: 'invalid_response_shape' });
     if (!hadCachedResult) {
@@ -2967,15 +2974,14 @@ async function refreshPetShop_() {
       // 更新沒有成功，商店按鈕邏輯完全不受影響（petShopTxBusy_ 等狀態沒有被動到）。
       statusEl.textContent = '⚠️ 更新失敗（' + reason + '），目前顯示的是上次讀到的資料。';
     }
-    return;
+    return false;
   }
   petShopLastResult_ = res.result;
-  petAccessoryEquippedId_ = res.result.equipped_accessory_id || '';
+  applyPetAccessoryTruth_(childId, res.result.equipped_accessory_id || '');
   reconcilePetPendingWithTruth_(childId, res.result);
-  const els = petRoomEls();
-  if (els.room) applyAccessoryForState_(els, petRoomCurrentState);
   statusEl.textContent = res.result.blocked ? '⚠️ 後端目前有其他寵物交易處理中，暫時無法穿戴／更換配件。' : '';
   renderPetShopList_(res.result);
+  return true;
 }
 
 function setPetShopStatus_(text) {
@@ -3065,10 +3071,17 @@ async function resumePetEquip_(childId) {
     const normalized = normalizePetEquipResponse_(res, pending);
     if (!normalized.ok) { setPetShopStatus_('⚠️ 穿戴回應格式無法確認，已保留原請求，可再試一次。'); renderPetShopList_(petShopLastResult_); return; }
     clearPetEquipPending_(childId);
-    // 唯一真實狀態來源：重新讀一次 getPetEconomyData，不直接拿這次穿戴 API 的
-    // result 就地更新畫面——確保小屋跟商店永遠反映後端真正確認過的狀態。
-    await refreshPetShop_();
-    if (currentChild === childId) setPetShopStatus_('✅ 已更換配件！');
+    // equipPetAccessory 的成功回應已經是後端交易狀態機完成、且通過上方
+    // normalize 契約驗證的權威結果。先立即套用到小屋、商店與餵食頁，
+    // 不再讓使用者等第二次 Google Sheet 讀取才看到換裝；完整 economy 讀取
+    // 改為背景確認。若第一次交易回應不確定，仍維持原本 fail-closed，
+    // 不會執行這個即時更新分支。
+    applyPetAccessoryTruth_(childId, normalized.result.equipped_accessory_id);
+    if (petShopLastResult_) renderPetShopList_(petShopLastResult_);
+    setPetShopStatus_('✅ 已更換配件！正在背景確認最新狀態…');
+    void refreshPetShop_().then(function (confirmed) {
+      if (confirmed && currentChild === childId) setPetShopStatus_('✅ 已更換配件！');
+    });
     return;
   }
   if (res.error === 'invalid_token') { handlePetEquipAuthError_(childId, res); return; }
@@ -3837,12 +3850,47 @@ let TEST_ONLY_equippedAccessoryId_ = '';
 // overrideActive_ 才會變 true，effective 值才會改用 TEST_ONLY_equippedAccessoryId_。
 // 這個 flag 純粹是畫面上的視覺 override，任何情況都不會呼叫後端 API。
 let TEST_ONLY_overrideActive_ = false;
-// 真正的穿戴來源：從後端 getPetEconomyData 回傳的 equipped_accessory_id 更新
-// （buyPetAccessory／equipPetAccessory 尚未核准在 preview 呼叫，見 Gate E／Gate B）。
+// 真正的穿戴來源：後端 getPetEconomyData 的 equipped_accessory_id，或通過完整
+// 契約驗證的 equipPetAccessory 成功回應；兩者最後都流經 applyPetAccessoryTruth_。
 let petAccessoryEquippedId_ = '';
 function effectiveEquippedAccessoryId_() {
   if (TEST_ONLY_overrideActive_) return TEST_ONLY_equippedAccessoryId_;
   return petAccessoryEquippedId_ || '';
+}
+
+// 把一筆已驗證的「目前穿戴」真實狀態同步到所有前端消費者。以前小屋、商店與
+// 餵食彈窗各自在不同時間重畫，容易出現商店已顯示「已穿戴」，小屋／餵食頁仍沿用
+// 舊狀態的分裂畫面。這個函式只接受兩種來源呼叫：通過完整格式驗證的
+// getPetEconomyData，或通過 normalizePetEquipResponse_ 的成功交易回應。
+function applyPetAccessoryTruth_(childId, accessoryId) {
+  if (currentChild !== childId) return false;
+  const nextId = accessoryId || '';
+  petAccessoryEquippedId_ = nextId;
+
+  // 商店已有一份通過驗證的快取時，同步更新其中的穿戴標記，讓按鈕可以立即從
+  // 「穿戴中」變成「已穿戴」。其餘 owned／price／balance 欄位原封不動，完整資料
+  // 仍由背景 getPetEconomyData 再確認一次。
+  if (petShopLastResult_ && Array.isArray(petShopLastResult_.accessories)) {
+    petShopLastResult_ = Object.assign({}, petShopLastResult_, {
+      equipped_accessory_id: nextId || null,
+      accessories: petShopLastResult_.accessories.map(function (entry) {
+        return Object.assign({}, entry, { equipped: entry.accessory_id === nextId });
+      })
+    });
+  }
+
+  const els = petRoomEls();
+  if (els.room) applyAccessoryForState_(els, petRoomCurrentState);
+  refreshPetZoomAccessory_();
+  return true;
+}
+
+// 餵食／放大頁不是另一套穿戴狀態；如果彈窗正開著，保持當下表情／動作，只重新
+// 套用同一件已確認配件。洗澡狀態仍依原規則隱藏配件。
+function refreshPetZoomAccessory_() {
+  const modal = document.getElementById('pet-zoom-modal');
+  if (!modal || modal.style.display !== 'flex') return;
+  setPetPortraitImage(petPortraitCurrentSrc_ || CAT_PORTRAIT_NEUTRAL);
 }
 
 // TEST_ONLY：網域防護——只允許本機測試（localhost/127.0.0.1/file://）或
@@ -3880,6 +3928,7 @@ function TEST_ONLY_setAccessory_(value) {
   }
   const els = petRoomEls();
   if (els.room) applyAccessoryForState_(els, petRoomCurrentState);
+  refreshPetZoomAccessory_();
 }
 
 function resetAccessoryFrames_(els) {
@@ -4006,6 +4055,9 @@ function applyRainbowWalkWing_(overlayImg, poseKey, expectedAccessoryId, expecte
 }
 
 function applyPoseSlot_(baseImg, overlayImg, poseKey, fallbackSrc, overlayPoseKey) {
+  // 同一顆圖片元素（尤其是餵食彈窗）可能在前一張姿勢圖 decode 尚未完成時又切換
+  // 到下一個表情。每次呼叫都使舊的非同步工作失效，避免較慢完成的舊圖事後蓋回來。
+  const poseApplyToken = (baseImg.__poseApplyToken = (baseImg.__poseApplyToken || 0) + 1);
   const accessoryId = effectiveEquippedAccessoryId_();
   const specificList = accessoryId && POSE_SPECIFIC_MAP.accessories[accessoryId];
   const overlayKey = overlayPoseKey || poseKey;
@@ -4029,6 +4081,7 @@ function applyPoseSlot_(baseImg, overlayImg, poseKey, fallbackSrc, overlayPoseKe
     const preload = new Image();
     preload.src = targetSrc;
     preload.decode().then(function () {
+      if (baseImg.__poseApplyToken !== poseApplyToken) return;
       if (petRoomCurrentState !== expectedState) return;
       if (effectiveEquippedAccessoryId_() !== accessoryId) return;
       baseImg.src = targetSrc;
@@ -4041,6 +4094,7 @@ function applyPoseSlot_(baseImg, overlayImg, poseKey, fallbackSrc, overlayPoseKe
     const expectedAccessoryId = accessoryId;
     const expectedState = petRoomCurrentState;
     baseImg.decode().then(function () {
+      if (baseImg.__poseApplyToken !== poseApplyToken) return;
       if (baseImg.getAttribute('src') !== fallbackSrc) return;
       if (effectiveEquippedAccessoryId_() !== expectedAccessoryId) return;
       if (forceRainbowWalkOverlay) {
@@ -4112,6 +4166,7 @@ const CAT_PORTRAIT_HAPPY   = 'img/pet/cat_happy.png';
 const CAT_PORTRAIT_GROOM   = 'img/pet/cat_groom_v3.png';
 const CAT_PORTRAIT_SLEEP   = 'img/pet/cat_sleep_v3.png';
 const CAT_PORTRAIT_BLINK   = 'img/pet/cat_portrait_blink.png';
+let petPortraitCurrentSrc_ = CAT_PORTRAIT_NEUTRAL;
 
 // 餵食彈窗（放大視窗）配件顯示：跟房間視圖共用同一套 ACCESSORY_MANIFEST／
 // POSE_SPECIFIC_MAP／applyPoseSlot_，只是換一個目標 <img>（#pet-portrait）跟一個
@@ -4129,6 +4184,7 @@ PET_PORTRAIT_POSE_KEY_BY_SRC_[CAT_PORTRAIT_HAPPY] = 'happy';
 function setPetPortraitImage(src) {
   const portrait = document.getElementById('pet-portrait');
   if (!portrait) return;
+  petPortraitCurrentSrc_ = src;
   const acc = document.getElementById('pet-portrait-acc');
   const poseKey = PET_PORTRAIT_POSE_KEY_BY_SRC_[src];
   if (poseKey && acc) applyPoseSlot_(portrait, acc, poseKey, src);
