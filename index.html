@@ -2277,6 +2277,7 @@ async function switchChild(id) {
   // 孩子的配件（或直接沿用到新孩子身上）。
   resetPetAccessoryEquipState_();
   closePetShop();
+  closePetZoom();
   _contextBubbleProtectedUntil = 0; // 切換孩子時不沿用上一位孩子的情境泡泡保護，避免卡住舊的天氣／節日文字
   document.getElementById('tab-candice').className = 'child-tab' + (id==='candice'?' active-candice':'');
   document.getElementById('tab-harris').className  = 'child-tab' + (id==='harris' ?' active-harris':'');
@@ -2294,7 +2295,7 @@ const SUB_TAB_IDS = ['menu','chores','orders','penalty','bank','forestpet'];
 const _pendingPenaltyAudioFromNavigation = new Set();
 function switchSubTab(tab, userInitiated = true) {
   cancelPendingVoiceSequence(); // Audio UX v1.0：切分頁時取消尚未播放的延遲 Voice
-  if (tab !== 'forestpet') closePetShop();
+  if (tab !== 'forestpet') { closePetShop(); closePetZoom(); }
   currentSubTab = tab;
   if (tab === 'penalty' && userInitiated) {
     _pendingPenaltyAudioFromNavigation.add(currentChild);
@@ -2951,6 +2952,13 @@ async function resumePendingPetFood_(childId) {
   // renderPetShopList_()。只有已有通過驗證的 economy 快取時才重畫，
   // 沒有快取時不猜測任何配件狀態。
   if (currentChild === childId && petShopLastResult_) renderPetShopList_(petShopLastResult_);
+  // Apps Script 冷啟動或 Sheet 讀寫偶爾需要較久時間。不提前假設成功，但在
+  // 數秒後把進度說清楚，避免使用者以為按鈕沒反應而重複送出。
+  const slowMessageTimer = setTimeout(function () {
+    if (state.status !== 'sending' || !state.inFlight || currentChild !== childId) return;
+    state.message = '後端仍在處理，第一次連線可能較久；畫面會保持開啟，請不要重複點擊。';
+    renderCurrentPetFood_();
+  }, 3000);
   state.inFlight = (async () => {
     const res = await sendPetFoodAttempt_(childId, pending);
     if (res && res.ok === true) {
@@ -3028,6 +3036,7 @@ async function resumePendingPetFood_(childId) {
   })();
   try { await state.inFlight; }
   finally {
+    clearTimeout(slowMessageTimer);
     state.inFlight = null; renderCurrentPetFood_();
     // 交易完成或進入待確認狀態後，依目前 food pending 真實狀態更新配件按鈕鎖。
     if (currentChild === childId && petShopLastResult_) renderPetShopList_(petShopLastResult_);
@@ -4011,6 +4020,7 @@ function renderForestPet(data) {
     el.innerHTML = `<div class="pet-encounter"><div class="pet-encounter-text">正在確認後端寵物狀態……<br>尚未確認前不會開始新的領養。</div></div>`;
     return;
   }
+  capturePetZoomBeforeRender_();
   stopPetRoom();
   el.innerHTML = `<div class="pet-room-outer"><div class="pet-room" id="pet-room"><div class="pet-room-wrap" id="pet-room-wrap" onclick="openPetZoom()"><div class="pet-room-flip" id="pet-room-flip"><div class="pet-room-sprite" id="pet-room-sprite"><div class="pet-room-walkframes" id="pet-room-walkframes"><div class="pet-room-walk-pair frame-a"><img class="pet-room-frame frame-a" src="img/pet/cat_walk_a.png" alt=""><img class="pet-room-frame pet-accessory-overlay frame-a" id="pet-room-walk-acc-a" alt=""></div><div class="pet-room-walk-pair frame-b"><img class="pet-room-frame frame-b" src="img/pet/cat_walk_b.png" alt=""><img class="pet-room-frame pet-accessory-overlay frame-b" id="pet-room-walk-acc-b" alt=""></div></div><div class="pet-room-idleframes" id="pet-room-idleframes"><img class="pet-room-idle-frame frame-a" src="img/pet/cat_idle_left.png" alt=""><img class="pet-room-idle-frame pet-accessory-overlay frame-a" id="pet-room-idle-acc-a" alt=""><img class="pet-room-idle-frame frame-b" src="img/pet/cat_idle_right.png" alt=""><img class="pet-room-idle-frame pet-accessory-overlay frame-b" id="pet-room-idle-acc-b" alt=""></div><img class="pet-room-static" id="pet-room-static" src="img/pet/cat_portrait.png" alt="貓咪"><img class="pet-accessory-overlay" id="pet-room-static-acc" alt=""></div></div></div></div><div class="pet-room-name" id="pet-room-name"></div><div class="pet-room-status" id="pet-room-status">點點貓咪，可以摸摸牠喔！</div><!-- TEST_ONLY_BEGIN：以下這個區塊只給部署前覆核／本機測試用，不是正式功能。
      若這段 HTML 被整份複製到 forest（正式站）repo，TEST_ONLY_applyHostGuard_()
@@ -4030,9 +4040,10 @@ function renderForestPet(data) {
   }
   renderPetFood();
   startPetRoom();
-  // 驚喜樹／背景資料刷新會重建整個 forestpet-content；如果使用者正在商店內
-  // 購買或穿戴，立即把新 modal 恢復成開啟並重畫目前狀態，不能把使用者踢出去。
+  // 驚喜樹／背景資料刷新會重建整個 forestpet-content；商店或餵食放大頁
+  // 若原本正開著，必須恢復新 modal 與目前狀態，不能把使用者踢出去。
   restorePetShopAfterRender_();
+  restorePetZoomAfterRender_();
 }
 
 // ══════════════════════════════════════════════
@@ -4246,17 +4257,56 @@ function petRoomMaybeBlink() {
   });
 }
 
+let petZoomOpen_ = false;
+let petZoomScrollTop_ = 0;
+let petZoomHintText_ = '';
+
 function openPetZoom() {
-  document.getElementById('pet-zoom-modal').style.display = 'flex';
+  const modal = document.getElementById('pet-zoom-modal');
+  if (!modal) return;
+  petZoomOpen_ = true;
+  petZoomScrollTop_ = 0;
+  const hint = document.getElementById('pet-hint');
+  petZoomHintText_ = hint ? hint.textContent : '';
+  modal.style.display = 'flex';
   stopPetRoom();
+  stopPetPortraitBlink();
   schedulePetPortraitBlink();
   setPetPortraitImage(CAT_PORTRAIT_NEUTRAL); // 一開啟就套用目前穿戴的配件，不用等使用者先摸一次
 }
 
 function closePetZoom() {
-  document.getElementById('pet-zoom-modal').style.display = 'none';
-  startPetRoom();
+  petZoomOpen_ = false;
+  petZoomScrollTop_ = 0;
+  petZoomHintText_ = '';
+  const modal = document.getElementById('pet-zoom-modal');
+  if (modal) modal.style.display = 'none';
   stopPetPortraitBlink();
+  startPetRoom();
+}
+
+function capturePetZoomBeforeRender_() {
+  if (!petZoomOpen_) return;
+  const panel = document.querySelector('#pet-zoom-modal .pet-zoom-panel');
+  const hint = document.getElementById('pet-hint');
+  if (panel) petZoomScrollTop_ = panel.scrollTop;
+  if (hint) petZoomHintText_ = hint.textContent;
+}
+
+function restorePetZoomAfterRender_() {
+  if (!petZoomOpen_) return;
+  const modal = document.getElementById('pet-zoom-modal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  const hint = document.getElementById('pet-hint');
+  if (hint && petZoomHintText_) hint.textContent = petZoomHintText_;
+  stopPetRoom();
+  stopPetPortraitBlink();
+  schedulePetPortraitBlink();
+  setPetPortraitImage(petPortraitCurrentSrc_ || CAT_PORTRAIT_NEUTRAL);
+  renderPetFood();
+  const panel = modal.querySelector('.pet-zoom-panel');
+  if (panel) panel.scrollTop = petZoomScrollTop_;
 }
 
 function updatePetStatsUI() {
