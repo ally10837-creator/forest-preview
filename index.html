@@ -308,21 +308,23 @@ body {
   z-index: 2; box-shadow: var(--shadow-sm);
 }
 .pet-stage { position: relative; padding: 30px 0 8px; text-align: center; cursor: pointer; }
-.pet-portrait-wrap { position: relative; width: 100%; max-width: 200px; margin: 0 auto; }
-/* cat_portrait.png（預設待機表情）這張圖本身臉部沒有畫在畫布正中央——尾巴甩到
-   右邊，把整張圖的視覺重心拉偏，直接置中整個畫布會讓臉看起來偏一邊。量測過
-   臉部（鼻子／兩眼中心）實際落在畫布約 41.1% 處，不是 50%，所以往左位移約
-   8.9% 畫布寬度讓臉置中。只有這張圖有這個問題——吃/開心/眨眼表情跟配件合成
-   全幀圖都已經確認過臉本來就置中，不要套用這個位移，所以用 class 只挑這張圖。 */
-.pet-portrait-wrap.portrait-face-shift { transform: translateX(-8.9%); }
-.pet-portrait { width: 100%; display: block; }
-.pet-portrait.bounce { animation: petBounce 0.4s ease; }
+.pet-portrait-wrap {
+  position: relative; left: var(--pet-portrait-center-shift, 0px);
+  width: 100%; max-width: 200px; margin: 0 auto;
+}
+/* 餵食彈窗以鼻子作為水平中線。各張表情圖右側尾巴占用的透明畫布比例不同，
+   JS 會依目前姿勢設定 --pet-portrait-center-shift；用 left 位移共同容器，貓咪與
+   配件會一起置中，而且不會跟下面以 transform 製作的互動動畫互相覆蓋。 */
+.pet-portrait { position: relative; z-index: 2; width: 100%; display: block; }
+/* 摸頭、咀嚼與甩乾都套在共同容器，而不是只套貓咪底圖；一般透明配件（含 rear
+   layer 的彩虹翅膀）因此會保持同一相對位置，跟著貓咪一起縮放、旋轉與抖動。 */
+.pet-portrait-wrap.bounce { animation: petBounce 0.4s ease; }
 @keyframes petBounce {
   0%,100% { transform: scale(1) rotate(0); }
   30%     { transform: scale(1.12) rotate(-4deg); }
   60%     { transform: scale(0.96) rotate(3deg); }
 }
-.pet-portrait.chew { animation: petChew 0.9s ease; }
+.pet-portrait-wrap.chew { animation: petChew 0.9s ease; }
 @keyframes petChew {
   0%,100% { transform: scaleY(1) scaleX(1); }
   20%     { transform: scaleY(0.86) scaleX(1.08); }
@@ -396,7 +398,7 @@ body {
   animation: petBathOverlayFade 1.6s ease forwards;
 }
 @keyframes petBathOverlayFade { 0% { opacity: 0; } 20% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
-.pet-portrait.shake-dry { animation: petShakeDry 0.6s ease; }
+.pet-portrait-wrap.shake-dry { animation: petShakeDry 0.6s ease; }
 @keyframes petShakeDry {
   0%, 100% { transform: rotate(0deg); }
   20%      { transform: rotate(-8deg); }
@@ -3807,10 +3809,11 @@ function renderPetFood() {
 }
 
 function petBouncePortrait() {
-  const portrait = document.getElementById('pet-portrait');
-  portrait.classList.remove('bounce');
-  void portrait.offsetWidth; // 強制 reflow，讓同一個 animation class 可以重新觸發
-  portrait.classList.add('bounce');
+  const wrap = document.getElementById('pet-portrait-wrap');
+  if (!wrap) return;
+  wrap.classList.remove('bounce');
+  void wrap.offsetWidth; // 強制 reflow，讓同一個 animation class 可以重新觸發
+  wrap.classList.add('bounce');
 }
 
 function spawnPetHearts() {
@@ -4181,6 +4184,16 @@ PET_PORTRAIT_POSE_KEY_BY_SRC_[CAT_PORTRAIT_BLINK] = 'portrait_blink';
 PET_PORTRAIT_POSE_KEY_BY_SRC_[CAT_PORTRAIT_EATING] = 'eating';
 PET_PORTRAIT_POSE_KEY_BY_SRC_[CAT_PORTRAIT_HAPPY] = 'happy';
 
+// 各張餵食彈窗底圖的鼻子 X 位置並不在畫布 50%：尾巴都在右側，直接把整張
+// 圖片畫布置中會讓鼻子（也就是角色面部中線）偏左。以下只移動共同父層，不動
+// 配件 manifest/座標，因此貓咪、前景配件與後景翅膀會維持原本相對位置一起移動。
+const PET_PORTRAIT_CENTER_SHIFT_BY_SRC_ = {};
+PET_PORTRAIT_CENTER_SHIFT_BY_SRC_[CAT_PORTRAIT_NEUTRAL] = 7.7;
+PET_PORTRAIT_CENTER_SHIFT_BY_SRC_[CAT_PORTRAIT_BLINK] = 7.7;
+PET_PORTRAIT_CENTER_SHIFT_BY_SRC_[CAT_PORTRAIT_EATING] = 6.0;
+PET_PORTRAIT_CENTER_SHIFT_BY_SRC_[CAT_PORTRAIT_HAPPY] = 8.0;
+PET_PORTRAIT_CENTER_SHIFT_BY_SRC_[CAT_PORTRAIT_BATH] = 3.0;
+
 function setPetPortraitImage(src) {
   const portrait = document.getElementById('pet-portrait');
   if (!portrait) return;
@@ -4189,11 +4202,16 @@ function setPetPortraitImage(src) {
   const poseKey = PET_PORTRAIT_POSE_KEY_BY_SRC_[src];
   if (poseKey && acc) applyPoseSlot_(portrait, acc, poseKey, src);
   else { portrait.src = src; if (acc) acc.style.display = 'none'; }
-  // applyPoseSlot_ 同步就把最終 src 定下來了（pose_specific 全幀圖或原本的
-  // fallbackSrc），這裡可以直接讀 portrait.src 判斷目前顯示的到底是哪張圖，
-  // 只有普通版 cat_portrait.png 需要位移置中，其餘一律不套用。
+  // 置中依「動作底圖」而不是最後可能換上的 pose_specific src 決定：姿勢專用
+  // 全幀圖沿用同一隻貓與同一畫布基準，所以必須跟該動作使用相同的鼻子中線補正。
   const wrap = document.getElementById('pet-portrait-wrap');
-  if (wrap) wrap.classList.toggle('portrait-face-shift', /(^|\/)cat_portrait\.png$/.test(portrait.src));
+  if (wrap) {
+    const shiftPct = PET_PORTRAIT_CENTER_SHIFT_BY_SRC_[src] || 0;
+    // relative-position 的百分比 left 會以外層 pet-stage 寬度計算，不是以這個
+    // 200px 圖框計算；因此先換成相對於圖框本身的 px，避免手機/平板位移量不同。
+    const wrapWidth = wrap.clientWidth || 200;
+    wrap.style.setProperty('--pet-portrait-center-shift', (wrapWidth * shiftPct / 100) + 'px');
+  }
 }
 
 // ── 餵食彈窗的真閉眼眨眼（換整張臉圖，不是 CSS 擠壓）──
@@ -4232,10 +4250,11 @@ function stopPetPortraitBlink() {
 }
 
 function petChewPortrait() {
-  const portrait = document.getElementById('pet-portrait');
-  portrait.classList.remove('chew');
-  void portrait.offsetWidth; // 強制 reflow，讓同一個 animation class 可以重新觸發
-  portrait.classList.add('chew');
+  const wrap = document.getElementById('pet-portrait-wrap');
+  if (!wrap) return;
+  wrap.classList.remove('chew');
+  void wrap.offsetWidth; // 強制 reflow，讓同一個 animation class 可以重新觸發
+  wrap.classList.add('chew');
 }
 
 function spawnPetYum() {
@@ -4287,10 +4306,11 @@ function playPetBathAnimation() {
   }
 
   setTimeout(() => {
-    const portrait = document.getElementById('pet-portrait');
-    portrait.classList.remove('shake-dry');
-    void portrait.offsetWidth;
-    portrait.classList.add('shake-dry');
+    const wrap = document.getElementById('pet-portrait-wrap');
+    if (!wrap) return;
+    wrap.classList.remove('shake-dry');
+    void wrap.offsetWidth;
+    wrap.classList.add('shake-dry');
     const sp = document.createElement('div');
     sp.className = 'pet-yum';
     sp.textContent = '✨';
