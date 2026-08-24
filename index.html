@@ -370,13 +370,22 @@ body {
 .pet-food-body { flex: 1; min-width: 0; }
 .pet-food-name { font-size: 14px; font-weight: 700; color: var(--cocoa); }
 .pet-food-desc { font-size: 11px; color: var(--cocoa-soft); margin-top: 2px; }
+.pet-food-stock { font-size: 11px; color: #7b5b45; margin-top: 4px; font-weight: 700; }
+.pet-food-actions { display: flex; flex-direction: column; gap: 5px; flex-shrink: 0; }
 .pet-feed-btn {
   background: var(--mint); color: white; border: 2px solid var(--cocoa); border-radius: 10px;
-  padding: 6px 14px; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+  padding: 6px 10px; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
   box-shadow: var(--shadow-sm); transition: all 0.1s; flex-shrink: 0;
 }
+.pet-buy-btn { background: var(--mango); color: var(--cocoa); }
 .pet-feed-btn:active { transform: translate(2px,2px); box-shadow: none; }
 .pet-feed-btn:disabled { background: #ddd; color: #999; cursor: not-allowed; box-shadow: none; border-color: #ccc; }
+.pet-food-notice {
+  background: #fffaf0; border: 2px dashed #d8b98e; border-radius: 12px; padding: 9px 11px;
+  color: var(--cocoa-soft); font-size: 12px; line-height: 1.55; text-align: center;
+}
+.pet-food-notice.warning { background: #fff1ed; border-color: #d88b76; color: #a24e3a; font-weight: 700; }
+.pet-food-resume-btn { margin-top: 7px; }
 
 /* ── PET 洗澡 ── */
 .pet-bath-btn {
@@ -1808,7 +1817,9 @@ const API = "https://script.google.com/macros/s/AKfycbwuFQMVeL4SP46EGPCHMhnVuYee
     // 配件商店：getPetEconomyData（唯讀）於 2026-08-20 核准。
     // equipPetAccessory（穿戴／更換已擁有配件）於 Gate E 核准（2026-08-21）。
     // buyPetAccessory（用森林幣購買）於 Gate B 核准（2026-08-21，與 Gate E 合併候選）。
-    'getPetEconomyData', 'equipPetAccessory', 'buyPetAccessory'
+    'getPetEconomyData', 'equipPetAccessory', 'buyPetAccessory',
+    // Phase 2.5：真實食物購買與餵食（後端既有、已覆核的冪等交易 action）。
+    'buyPetFood', 'feedPetFood'
   ]);
   let apiOrigin = '', apiPath = '';
   try { const apiUrl = new URL(API); apiOrigin = apiUrl.origin; apiPath = apiUrl.pathname; } catch (e) {}
@@ -2723,6 +2734,352 @@ function invalidateTreeRequest_(childId) {
   const state = getTreeState_(childId); state.requestSeq += 1; state.inFlight = null; cleanupTreeRewardAnimation_();
 }
 
+// ══════════════════════════════════════════════
+// PHASE 2.5 真實食物交易：後端是金幣、庫存、EXP 的唯一真相。
+// 後端目前沒有 inventory-read API，所以只在同一個頁面工作階段顯示「最近一次交易後」
+// 由後端回傳的 quantity_after；不把數字持久化，也不把它冒充成可隨時讀取的目前背包。
+// ══════════════════════════════════════════════
+const PET_FOOD_CATALOG_ = Object.freeze([
+  Object.freeze({ foodId: 'milk', name: '牛奶', emoji: '🥛', priceCoins: 3, effectExp: 6 }),
+  Object.freeze({ foodId: 'fish', name: '魚乾', emoji: '🐟', priceCoins: 6, effectExp: 10 }),
+  Object.freeze({ foodId: 'chicken', name: '雞肉', emoji: '🍗', priceCoins: 10, effectExp: 14 })
+]);
+
+function createInitialPetFoodState_() {
+  return { status: 'idle', message: '', guarded: false, inFlight: null, lastConfirmed: Object.create(null) };
+}
+const _petFoodStates = { candice: createInitialPetFoodState_(), harris: createInitialPetFoodState_() };
+function getPetFoodState_(childId) {
+  return _petFoodStates[childId] || (_petFoodStates[childId] = createInitialPetFoodState_());
+}
+function getPetFoodMeta_(foodId) { return PET_FOOD_CATALOG_.find(item => item.foodId === foodId) || null; }
+function petFoodPendingKey_(childId) { return 'forest_pet_food_pending_' + childId; }
+function petFoodGuardKey_(childId) { return 'forest_pet_food_guard_' + childId; }
+
+function readPetFoodPendingRecord_(childId) {
+  try {
+    const raw = localStorage.getItem(petFoodPendingKey_(childId));
+    if (raw === null) return { kind: 'none' };
+    let value;
+    try { value = JSON.parse(raw); } catch (e) { return { kind: 'invalid' }; }
+    const expectedPrefix = value && value.action === 'buyPetFood'
+      ? 'petfood-buy-' + childId + '-'
+      : value && value.action === 'feedPetFood' ? 'petfood-feed-' + childId + '-' : '';
+    const valid = value && value.version === 1 && value.childId === childId &&
+      (value.action === 'buyPetFood' || value.action === 'feedPetFood') && !!getPetFoodMeta_(value.foodId) &&
+      typeof value.clientRequestId === 'string' &&
+      /^petfood-(buy|feed)-[a-z]+-[0-9]+-[0-9a-z]+$/i.test(value.clientRequestId) &&
+      value.clientRequestId.startsWith(expectedPrefix) &&
+      typeof value.createdAt === 'string' && Number.isFinite(Date.parse(value.createdAt));
+    return valid ? { kind: 'valid', pending: value } : { kind: 'invalid' };
+  } catch (e) { return { kind: 'storage_error' }; }
+}
+
+function hasPetFoodPendingRecord_(childId) { return readPetFoodPendingRecord_(childId).kind !== 'none'; }
+
+function readPetFoodGuardRecord_(childId) {
+  try {
+    const raw = localStorage.getItem(petFoodGuardKey_(childId));
+    if (raw === null) return { kind: 'none' };
+    let value;
+    try { value = JSON.parse(raw); } catch (e) { return { kind: 'invalid' }; }
+    const valid = value && value.version === 1 && value.childId === childId &&
+      typeof value.clientRequestId === 'string' && typeof value.reason === 'string' &&
+      typeof value.createdAt === 'string' && Number.isFinite(Date.parse(value.createdAt));
+    return valid ? { kind: 'valid', guard: value } : { kind: 'invalid' };
+  } catch (e) { return { kind: 'storage_error' }; }
+}
+
+function hasPetFoodProtection_(childId) {
+  return hasPetFoodPendingRecord_(childId) || readPetFoodGuardRecord_(childId).kind !== 'none';
+}
+
+function setPetFoodGuard_(childId, pending, reason) {
+  try {
+    const guard = { version: 1, childId, clientRequestId: pending.clientRequestId, reason, createdAt: new Date().toISOString() };
+    localStorage.setItem(petFoodGuardKey_(childId), JSON.stringify(guard));
+    return readPetFoodGuardRecord_(childId).kind === 'valid';
+  } catch (e) { return false; }
+}
+
+function storePetFoodPending_(pending) {
+  try {
+    const key = petFoodPendingKey_(pending.childId);
+    const serialized = JSON.stringify(pending);
+    localStorage.setItem(key, serialized);
+    const verified = readPetFoodPendingRecord_(pending.childId);
+    return verified.kind === 'valid' && JSON.stringify(verified.pending) === serialized;
+  } catch (e) { return false; }
+}
+
+function clearPetFoodPending_(childId) {
+  try {
+    localStorage.removeItem(petFoodGuardKey_(childId));
+    localStorage.removeItem(petFoodPendingKey_(childId));
+    return localStorage.getItem(petFoodPendingKey_(childId)) === null &&
+      localStorage.getItem(petFoodGuardKey_(childId)) === null;
+  } catch (e) { return false; }
+}
+
+function createPetFoodPending_(childId, action, foodId) {
+  if (hasPetFoodProtection_(childId)) return null;
+  const shortAction = action === 'buyPetFood' ? 'buy' : 'feed';
+  const pending = {
+    version: 1,
+    childId,
+    action,
+    foodId,
+    clientRequestId: 'petfood-' + shortAction + '-' + childId + '-' + Date.now() + '-' + Math.random().toString(36).slice(2),
+    createdAt: new Date().toISOString()
+  };
+  return storePetFoodPending_(pending) ? pending : null;
+}
+
+function safePetDeviceToken_(childId) {
+  try { return localStorage.getItem(petDeviceTokenKey(childId)); } catch (e) { return null; }
+}
+
+function removePetDeviceTokenSafely_(childId) {
+  try { localStorage.removeItem(petDeviceTokenKey(childId)); } catch (e) {}
+}
+
+function renderCurrentPetFood_() {
+  if (currentSubTab === 'forestpet' && document.getElementById('pet-food-grid')) renderPetFood();
+}
+
+function normalizeBuyPetFoodResponse_(res, pending) {
+  if (!res || res.ok !== true || !res.result || typeof res.result !== 'object' || Array.isArray(res.result)) return null;
+  const r = res.result;
+  const meta = getPetFoodMeta_(pending.foodId);
+  if (!meta || r.food_id !== pending.foodId || !Number.isInteger(r.price_coins) || r.price_coins !== meta.priceCoins ||
+      !Number.isInteger(r.quantity_after) || r.quantity_after < 0 ||
+      !Number.isInteger(r.new_balance) || r.new_balance < 0) return null;
+  return { foodId: r.food_id, priceCoins: r.price_coins, quantityAfter: r.quantity_after, newBalance: r.new_balance };
+}
+
+function normalizeFeedPetFoodResponse_(res, pending) {
+  if (!res || res.ok !== true || !res.result || typeof res.result !== 'object' || Array.isArray(res.result)) return null;
+  const r = res.result;
+  const meta = getPetFoodMeta_(pending.foodId);
+  const valid = meta && r.food_id === pending.foodId &&
+    Number.isInteger(r.effect_value) && r.effect_value === meta.effectExp &&
+    Number.isInteger(r.exp_gained) && r.exp_gained >= 0 &&
+    Number.isInteger(r.exp_gained_today_before) && r.exp_gained_today_before >= 0 && r.exp_gained_today_before <= 40 &&
+    Number.isInteger(r.feed_count_today_before) && r.feed_count_today_before >= 0 && r.feed_count_today_before <= 2 &&
+    Number.isInteger(r.feed_count_today) && r.feed_count_today === r.feed_count_today_before + 1 && r.feed_count_today <= 3 &&
+    r.exp_gained === Math.min(r.effect_value, Math.max(0, 40 - r.exp_gained_today_before)) &&
+    Number.isInteger(r.exp_points) && r.exp_points >= 0 &&
+    Number.isInteger(r.quantity_after) && r.quantity_after >= 0 &&
+    typeof r.feed_date_taipei === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.feed_date_taipei);
+  if (!valid) return null;
+  return { foodId: r.food_id, effectValue: r.effect_value, expGained: r.exp_gained,
+    expGainedTodayBefore: r.exp_gained_today_before, feedCountTodayBefore: r.feed_count_today_before,
+    feedCountToday: r.feed_count_today, expPoints: r.exp_points,
+    quantityAfter: r.quantity_after, feedDateTaipei: r.feed_date_taipei };
+}
+
+async function sendPetFoodAttempt_(childId, pending) {
+  const token = safePetDeviceToken_(childId);
+  if (!token) return { ok: false, error: 'invalid_token', reason: 'missing' };
+  const payload = { childId, deviceToken: token, foodId: pending.foodId, clientRequestId: pending.clientRequestId };
+  let res = await callPhase2A(pending.action, payload);
+  if (res.error === 'network_error') res = await callPhase2A(pending.action, payload);
+  return res;
+}
+
+function updateBalanceFromPetFood_(childId, newBalance) {
+  if (allData[childId]) allData[childId].balance = newBalance;
+  const balanceEl = document.getElementById('balance-' + childId);
+  if (balanceEl) balanceEl.innerHTML = C(14) + ' ' + newBalance + ' 代幣';
+}
+
+function terminalPetFoodErrorMessage_(pending, error) {
+  if (error === 'unknown_food_id') return '食物設定與後端不一致，請聯絡管理員。';
+  if (error === 'insufficient_funds') return '代幣不足，先完成家事再來購買吧！';
+  if (error === 'insufficient_inventory') return '後端確認背包裡沒有這份食物，可以先購買。';
+  if (error === 'daily_feed_limit_reached') return '今天已經餵食 3 次了，明天再來陪貓咪吧！';
+  if (error === 'invalid_request') return '請求格式無法使用，請更新頁面或聯絡管理員。';
+  if (error === 'unknown_child_id') return '孩子資料無法確認，請聯絡管理員。';
+  if (error === 'pet_not_found') return '後端找不到寵物，請重新載入確認領養狀態。';
+  return pending.action === 'buyPetFood' ? '購買沒有完成。' : '餵食沒有完成。';
+}
+
+function isTerminalPetFoodError_(pending, error) {
+  if (error === 'invalid_request' || error === 'unknown_child_id' || error === 'pet_not_found') return true;
+  if (pending.action === 'buyPetFood') return error === 'unknown_food_id' || error === 'insufficient_funds';
+  return error === 'unknown_food_id' || error === 'insufficient_inventory' || error === 'daily_feed_limit_reached';
+}
+
+async function resumePendingPetFood_(childId) {
+  const record = readPetFoodPendingRecord_(childId);
+  const state = getPetFoodState_(childId);
+  if (record.kind === 'none') return;
+  if (record.kind !== 'valid') {
+    state.status = 'blocked';
+    state.message = record.kind === 'storage_error'
+      ? '瀏覽器無法安全讀取未決交易，請勿重複操作。'
+      : '未決食物交易資料損壞，已保留原紀錄，請聯絡管理員。';
+    renderCurrentPetFood_(); return;
+  }
+  if (state.guarded) { renderCurrentPetFood_(); return; }
+  if (state.inFlight) return state.inFlight;
+  const pending = record.pending;
+  const guardRecord = readPetFoodGuardRecord_(childId);
+  if (guardRecord.kind !== 'none') {
+    state.status = 'blocked'; state.guarded = true;
+    state.message = guardRecord.kind === 'valid'
+      ? '這筆食物交易已標記為需要人工核對，請勿重複操作。'
+      : '食物交易保護紀錄無法安全讀取，請聯絡管理員。';
+    renderCurrentPetFood_(); return;
+  }
+  if (hasPetAccessoryProtection_(childId)) {
+    state.status = 'blocked'; state.message = '同時發現食物與配件未決交易，請先完成配件原請求。';
+    renderCurrentPetFood_(); return;
+  }
+  if (getTreeOpenPending_(childId)) {
+    state.status = 'blocked'; state.message = '同時發現食物與果實未決交易，請聯絡管理員核對。';
+    renderCurrentPetFood_(); return;
+  }
+  if (!safePetDeviceToken_(childId)) {
+    state.status = 'locked'; state.message = '裝置連結已失效；原食物請求已保留，重新連結後可繼續確認。';
+    renderCurrentPetFood_(); return;
+  }
+  state.status = 'sending'; state.guarded = false; state.message = '正在請後端確認這筆交易，請不要重複點擊……';
+  renderCurrentPetFood_();
+  // 食物 pending 期間，配件商店的購買／穿戴按鈕也要立刻鎖住。舊整合版使用
+  // 舊版 renderer 重畫舊式配件 grid；目前 preview 已改用
+  // renderPetShopList_()。只有已有通過驗證的 economy 快取時才重畫，
+  // 沒有快取時不猜測任何配件狀態。
+  if (currentChild === childId && petShopLastResult_) renderPetShopList_(petShopLastResult_);
+  state.inFlight = (async () => {
+    const res = await sendPetFoodAttempt_(childId, pending);
+    if (res && res.ok === true) {
+      const normalized = pending.action === 'buyPetFood'
+        ? normalizeBuyPetFoodResponse_(res, pending)
+        : normalizeFeedPetFoodResponse_(res, pending);
+      if (!normalized) {
+        state.status = 'blocked'; state.guarded = false; state.message = '後端回應格式無法確認，已保留原請求。';
+        return;
+      }
+      state.lastConfirmed[pending.foodId] = {
+        quantityAfter: normalized.quantityAfter,
+        action: pending.action,
+        confirmedAt: Date.now()
+      };
+      if (pending.action === 'buyPetFood') updateBalanceFromPetFood_(childId, normalized.newBalance);
+      if (!clearPetFoodPending_(childId)) {
+        state.status = 'blocked'; state.guarded = true; state.message = '交易已成功，但瀏覽器無法清除未決紀錄；請勿重複操作。';
+        return;
+      }
+      state.status = 'idle'; state.guarded = false;
+      const meta = getPetFoodMeta_(pending.foodId);
+      if (pending.action === 'buyPetFood') {
+        state.message = '購買成功！本次操作後，後端確認有 ' + normalized.quantityAfter + ' 份，餘額 ' + normalized.newBalance + ' 代幣。';
+        if (currentChild === childId) showToast('✅ 已買到' + meta.name + '！', 'success');
+      } else {
+        state.message = '餵食成功（' + normalized.feedDateTaipei + '）！獲得 ' + normalized.expGained +
+          ' EXP，今日第 ' + normalized.feedCountToday + ' 次，寵物總 EXP ' + normalized.expPoints +
+          '；本次操作後剩 ' + normalized.quantityAfter + ' 份。';
+        if (currentChild === childId && currentSubTab === 'forestpet') {
+          const hint = document.getElementById('pet-hint');
+          if (hint) hint.textContent = meta.name + '餵食成功，貓咪獲得 ' + normalized.expGained + ' EXP！';
+          playPetFeedAnimation(meta.emoji);
+          showToast('😋 餵食成功！', 'success');
+        }
+      }
+      return;
+    }
+    const error = res && typeof res.error === 'string' ? res.error : 'invalid_response';
+    if (isTerminalPetFoodError_(pending, error)) {
+      const message = terminalPetFoodErrorMessage_(pending, error);
+      if (!clearPetFoodPending_(childId)) {
+        state.status = 'blocked'; state.guarded = true; state.message = message + ' 但瀏覽器無法清除未決紀錄，請勿重複操作。';
+      } else {
+        state.status = 'idle'; state.guarded = false; state.message = message;
+      }
+      if (currentChild === childId) showToast(message, 'warn');
+      return;
+    }
+    if (error === 'invalid_token') {
+      if (res.reason === 'expired' || res.reason === 'revoked' || res.reason === 'not_found' || res.reason === 'missing') {
+        removePetDeviceTokenSafely_(childId);
+        state.status = 'locked'; state.guarded = false; state.message = '裝置連結已失效；原食物請求已保留，重新連結後可繼續確認。';
+      } else if (res.reason === 'credential_conflict' || res.reason === 'invalid_status') {
+        setPetFoodGuard_(childId, pending, 'invalid_token:' + res.reason);
+        state.status = 'blocked'; state.guarded = true; state.message = '裝置憑證資料需要人工核對；原食物請求已保留。';
+      } else {
+        setPetFoodGuard_(childId, pending, 'invalid_token:unknown_reason');
+        state.status = 'blocked'; state.guarded = true; state.message = '裝置驗證結果無法安全判定；原食物請求已保留。';
+      }
+      return;
+    }
+    if (error === 'network_error') {
+      state.status = 'blocked'; state.guarded = false; state.message = '網路結果不確定，請用原請求繼續確認。'; return;
+    }
+    if (error === 'invalid_response') {
+      state.status = 'blocked'; state.guarded = false; state.message = '後端回應格式無法確認，已保留原請求。'; return;
+    }
+    if (error === 'conflict' || error === 'error_unsynced' || error === 'credential_conflict') {
+      setPetFoodGuard_(childId, pending, error);
+      state.status = 'blocked'; state.guarded = true; state.message = '這筆食物交易需要人工核對，已保留原請求。'; return;
+    }
+    setPetFoodGuard_(childId, pending, error);
+    state.status = 'blocked'; state.guarded = true; state.message = '交易結果無法安全判定，已保留原請求。';
+  })();
+  try { await state.inFlight; }
+  finally {
+    state.inFlight = null; renderCurrentPetFood_();
+    // 交易完成或進入待確認狀態後，依目前 food pending 真實狀態更新配件按鈕鎖。
+    if (currentChild === childId && petShopLastResult_) renderPetShopList_(petShopLastResult_);
+  }
+}
+
+async function startPetFoodAction_(action, foodId) {
+  const childId = currentChild;
+  const meta = getPetFoodMeta_(foodId);
+  if (!meta || (action !== 'buyPetFood' && action !== 'feedPetFood')) return;
+  if (classifyServerPet_(allData[childId]).kind !== 'present') {
+    showToast('請先重新載入，確認後端寵物狀態。', 'warn'); return;
+  }
+  if (!safePetDeviceToken_(childId)) {
+    showToast('請先連結這台裝置。', 'warn'); return;
+  }
+  if (hasPetAccessoryProtection_(childId)) {
+    showToast('有一筆配件交易待確認，完成後才能購買或餵食。', 'warn'); return;
+  }
+  if (getTreeOpenPending_(childId)) {
+    showToast('有一筆果實交易待確認，完成後才能購買或餵食。', 'warn'); return;
+  }
+  if (hasPetFoodProtection_(childId)) {
+    showToast('已有一筆食物交易待確認，請先繼續原請求。', 'warn'); return;
+  }
+  if (action === 'buyPetFood') {
+    const confirmed = await showConfirm('確定購買「' + meta.name + '」嗎？\n後端將扣除 ' + meta.priceCoins + ' 枚代幣。');
+    if (!confirmed || currentChild !== childId) return;
+    if (classifyServerPet_(allData[childId]).kind !== 'present' || getTreeOpenPending_(childId) ||
+        hasPetFoodProtection_(childId) || hasPetAccessoryProtection_(childId) || !safePetDeviceToken_(childId)) {
+      showToast('狀態已改變，請重新確認。', 'warn'); return;
+    }
+  }
+  const pending = createPetFoodPending_(childId, action, foodId);
+  if (!pending) {
+    const state = getPetFoodState_(childId);
+    state.status = 'blocked'; state.message = '瀏覽器無法安全保存未決交易，因此沒有送出請求。';
+    renderCurrentPetFood_(); showToast(state.message, 'warn'); return;
+  }
+  await resumePendingPetFood_(childId);
+}
+
+function petBuyFood(foodId) { return startPetFoodAction_('buyPetFood', foodId); }
+
+// 現行配件商店以買／穿兩種 localStorage pending 與共用 busy 鎖保護交易。
+function hasPetAccessoryProtection_(childId) {
+  const busy = typeof petShopTxBusy_ !== 'undefined' && petShopTxBusy_;
+  const equipPending = typeof getPetEquipPending_ === 'function' && getPetEquipPending_(childId);
+  const buyPending = typeof getPetBuyPending_ === 'function' && getPetBuyPending_(childId);
+  return !!busy || !!equipPending || !!buyPending;
+}
+
 function normalizeTreeStatusResponse_(res) {
   if (!res || !res.ok || !Array.isArray(res.pending_fruits)) return { ok: false, error: 'invalid_response' };
   const fruits = [];
@@ -3086,6 +3443,10 @@ function handlePetEquipAuthError_(childId, res) {
 async function resumePetEquip_(childId) {
   const pending = getPetEquipPending_(childId);
   if (!pending || petShopTxBusy_) return;
+  if (hasPetFoodProtection_(childId)) {
+    setPetShopStatus_('⚠️ 有一筆食物交易待確認，完成後才能穿戴配件。');
+    return;
+  }
   const seq = ++petShopRequestSeq_;
   petShopTxBusy_ = true;
   petShopTxKind_ = 'equip';
@@ -3140,6 +3501,10 @@ async function resumePetEquip_(childId) {
 async function equipPetAccessoryClick_(accessoryId) {
   const childId = currentChild;
   if (!petShopLastResult_ || petShopTxBusy_ || petShopLastResult_.blocked) return;
+  if (hasPetFoodProtection_(childId)) {
+    setPetShopStatus_('⚠️ 有一筆食物交易待確認，完成後才能穿戴配件。');
+    return;
+  }
   const entry = petShopLastResult_.accessories.find(function (a) { return a.accessory_id === accessoryId; });
   if (!entry || !entry.owned || entry.equipped) return; // 未擁有或已穿戴：按鈕本來就不該可點，這裡再擋一次
   const pending = getOrCreatePetEquipPending_(childId, accessoryId);
@@ -3237,6 +3602,10 @@ function handlePetBuyAuthError_(childId, res) {
 async function resumePetBuy_(childId) {
   const pending = getPetBuyPending_(childId);
   if (!pending || petShopTxBusy_) return;
+  if (hasPetFoodProtection_(childId)) {
+    setPetShopStatus_('⚠️ 有一筆食物交易待確認，完成後才能購買配件。');
+    return;
+  }
   const seq = ++petShopRequestSeq_;
   petShopTxBusy_ = true;
   petShopTxKind_ = 'buy';
@@ -3289,6 +3658,10 @@ async function resumePetBuy_(childId) {
 async function buyPetAccessoryClick_(accessoryId) {
   const childId = currentChild;
   if (!petShopLastResult_ || petShopTxBusy_ || petShopLastResult_.blocked) return;
+  if (hasPetFoodProtection_(childId)) {
+    setPetShopStatus_('⚠️ 有一筆食物交易待確認，完成後才能購買配件。');
+    return;
+  }
   const entry = petShopLastResult_.accessories.find(function (a) { return a.accessory_id === accessoryId; });
   if (!entry || entry.owned) return; // 已擁有：按鈕本來就不該可點，這裡再擋一次
   if (petShopLastResult_.balance < entry.price_coins) return; // 餘額不足：按鈕本來就不該可點，後端仍會權威驗證一次
@@ -3365,6 +3738,7 @@ function renderPetShopList_(result) {
     // 未擁有且餘額不足則停用並顯示「森林幣不足」（後端仍會權威驗證，前端停用只是體驗優化）。
     // 買與穿戴共用同一把鎖 petShopTxBusy_：任一交易進行中，所有按鈕（不分買/穿戴）都鎖定。
     const btn = document.createElement('button');
+    const foodTxBlocked = hasPetFoodProtection_(currentChild);
     const isThisTxTarget = petShopTxBusy_ && petShopTxTargetId_ === a.accessory_id;
     if (a.owned && a.equipped) {
       btn.className = 'pet-shop-action-btn equipped';
@@ -3373,7 +3747,7 @@ function renderPetShopList_(result) {
     } else if (a.owned) {
       btn.className = 'pet-shop-action-btn';
       btn.textContent = (isThisTxTarget && petShopTxKind_ === 'equip') ? '穿戴中…' : '穿戴';
-      btn.disabled = petShopTxBusy_ || result.blocked;
+      btn.disabled = petShopTxBusy_ || result.blocked || foodTxBlocked;
       if (!btn.disabled) btn.onclick = function () { void equipPetAccessoryClick_(a.accessory_id); };
     } else if (result.balance < a.price_coins) {
       btn.className = 'pet-shop-action-btn';
@@ -3382,7 +3756,7 @@ function renderPetShopList_(result) {
     } else {
       btn.className = 'pet-shop-action-btn';
       btn.textContent = (isThisTxTarget && petShopTxKind_ === 'buy') ? '購買中…' : '購買';
-      btn.disabled = petShopTxBusy_ || result.blocked;
+      btn.disabled = petShopTxBusy_ || result.blocked || foodTxBlocked;
       if (!btn.disabled) btn.onclick = function () { void buyPetAccessoryClick_(a.accessory_id); };
     }
 
@@ -3437,6 +3811,10 @@ async function openTreeFruit_(fruitId) {
   const childId = currentChild;
   const state = getTreeState_(childId);
   if (state.status === 'opening' || classifyServerPet_(allData[childId]).kind !== 'present') return;
+  if (hasPetFoodProtection_(childId)) {
+    state.status = 'blocked'; state.message = '有一筆食物交易待確認，完成後才能打開果實。';
+    renderCurrentForestPet_(); return;
+  }
   if (!state.pendingFruits.some(f => f.fruit_id === fruitId)) return;
   const pending = getOrCreateTreeOpenPending_(childId, fruitId);
   if (!pending) { state.status = 'blocked'; state.message = '已有另一顆果實待確認，不能建立新請求。'; renderCurrentForestPet_(); return; }
@@ -3447,12 +3825,23 @@ async function resumePendingTreeOpen_(childId) {
   const pending = getTreeOpenPending_(childId);
   const state = getTreeState_(childId);
   if (!pending || state.status === 'opening') return;
+  if (hasPetFoodProtection_(childId)) {
+    state.status = 'blocked'; state.message = '同時發現食物與果實未決交易，請聯絡管理員核對。';
+    renderCurrentForestPet_(); return;
+  }
   if (!localStorage.getItem(petDeviceTokenKey(childId))) { state.status = 'locked'; state.message = '請先連結這台裝置，再用同一筆請求繼續。'; renderCurrentForestPet_(); return; }
   state.status = 'opening'; state.message = '正在打開果實，請不要重複點擊……'; renderCurrentForestPet_();
   const res = await sendTreeOpenAttempt_(childId, pending);
   if (res.ok) {
     const normalized = normalizeTreeOpenResponse_(res, pending);
     if (!normalized.ok) { state.status = 'blocked'; state.message = '獎勵回應格式無法確認，已保留原請求。'; renderCurrentForestPet_(); return; }
+    if (normalized.result.reward_type === 'food') {
+      getPetFoodState_(childId).lastConfirmed[normalized.result.item_id] = {
+        quantityAfter: normalized.result.quantity_after,
+        action: 'openTreeReward',
+        confirmedAt: Date.now()
+      };
+    }
     if (currentChild === childId && currentSubTab === 'forestpet') await playTreeRewardSequence_(normalized.result);
     clearTreeOpenPending_(childId);
     if (currentChild === childId && currentSubTab === 'forestpet') showTreeRewardResult_(normalized.result);
@@ -3487,7 +3876,7 @@ function showTreeRewardResult_(result) {
   } else {
     const label = treeRewardFoodLabel_(result.item_id);
     icon.textContent = result.item_id === 'fish' ? '🐟' : '🍗'; title.textContent = '得到' + label + '！';
-    copy.textContent = label + '已由後端安全放入背包。\n本次開獎完成時的後端數量：' + result.quantity_after + '\n真實背包與餵食功能將在後續開放。';
+    copy.textContent = label + '已由後端安全放入背包。\n本次開獎完成時的後端數量：' + result.quantity_after + '\n打開貓咪放大頁即可查看並餵食。';
   }
   document.getElementById('tree-reward-overlay').classList.add('show');
 }
@@ -3526,6 +3915,8 @@ function renderTreeSection_(childId, cachedOnly) {
   const token = localStorage.getItem(petDeviceTokenKey(childId));
   const state = getTreeState_(childId);
   const pending = getTreeOpenPending_(childId);
+  const foodRecord = readPetFoodPendingRecord_(childId);
+  const foodGuard = readPetFoodGuardRecord_(childId);
   let status = '';
   let actions = '';
   let fruits = [];
@@ -3533,6 +3924,22 @@ function renderTreeSection_(childId, cachedOnly) {
   if (cachedOnly) {
     status = '這是上次由後端確認的寵物快取。重新載入確認後，才能連結裝置或操作驚喜樹。';
     actions = `<button class="tree-action-btn secondary" onclick="manualRefreshChild()">重新載入確認</button>`;
+  } else if (foodRecord.kind !== 'none' || foodGuard.kind !== 'none') {
+    fruits = state.pendingFruits;
+    disabled = true;
+    if (pending) {
+      status = `<span class="tree-warning">同時發現食物與果實未決交易，請聯絡管理員核對。</span>`;
+    } else if (foodGuard.kind !== 'none') {
+      status = `<span class="tree-warning">食物交易已進入人工核對保護，暫停打開果實。</span>`;
+    } else if (foodRecord.kind !== 'valid') {
+      status = `<span class="tree-warning">未決食物交易無法安全讀取，暫停打開果實，請聯絡管理員。</span>`;
+    } else if (!token) {
+      status = `<span class="tree-warning">有一筆食物交易待確認；重新連結裝置後才能繼續。</span>`;
+      actions = `<button class="tree-action-btn" onclick="openPetSetup('link_existing_pet')">重新連結這台裝置</button>`;
+    } else {
+      status = `<span class="tree-warning">有一筆食物交易待確認，完成後才能打開果實。</span>`;
+      actions = `<button class="tree-action-btn" onclick="resumePendingPetFood_('${childId}')">繼續確認食物交易</button>`;
+    }
   } else if (!token || state.status === 'locked') {
     status = '驚喜樹已經在這裡了。連結這台裝置後，就能查看和打開成熟果實。';
     actions = `<button class="tree-action-btn" onclick="openPetSetup('link_existing_pet')">連結這台裝置</button>`;
@@ -3866,7 +4273,68 @@ function updatePetStatsUI() {
 function renderPetFood() {
   const grid = document.getElementById('pet-food-grid');
   if (!grid) return;
-  grid.innerHTML = `<div class="pet-food-card"><div class="pet-food-emoji">🎒</div><div class="pet-food-body"><div class="pet-food-name">真實背包由後端保存</div><div class="pet-food-desc">驚喜樹抽到的魚乾或雞肉條不會消失；完整背包與餵食功能將在後續開放。目前不顯示或推算庫存數量。</div></div></div>`;
+  const childId = currentChild;
+  const state = getPetFoodState_(childId);
+  const foodRecord = readPetFoodPendingRecord_(childId);
+  const guardRecord = readPetFoodGuardRecord_(childId);
+  const treePending = getTreeOpenPending_(childId);
+  const accessoryBlocked = hasPetAccessoryProtection_(childId);
+  const serverPetPresent = classifyServerPet_(allData[childId]).kind === 'present';
+  const token = safePetDeviceToken_(childId);
+  const busy = state.status === 'sending';
+  let notice = '庫存由後端保存；此處只顯示本次工作階段中，後端最近一次確認的數量。重新載入後會回到「尚未確認」。';
+  let noticeClass = '';
+  let resumeHtml = '';
+  let actionsBlocked = !serverPetPresent || !token || !!treePending || accessoryBlocked || foodRecord.kind !== 'none' ||
+    guardRecord.kind !== 'none' || busy || state.status === 'blocked';
+
+  if (!serverPetPresent) {
+    notice = '請先重新載入，確認後端寵物狀態。'; noticeClass = ' warning';
+  } else if (accessoryBlocked && (foodRecord.kind !== 'none' || guardRecord.kind !== 'none')) {
+    notice = '同時發現食物與配件未決交易，請聯絡管理員核對。'; noticeClass = ' warning';
+  } else if (treePending && (foodRecord.kind !== 'none' || guardRecord.kind !== 'none')) {
+    notice = '同時發現食物與果實未決交易，請聯絡管理員核對。'; noticeClass = ' warning';
+  } else if (guardRecord.kind !== 'none') {
+    notice = guardRecord.kind === 'valid'
+      ? '這筆食物交易已標記為需要人工核對；所有購買、餵食與果實交易均已暫停。'
+      : '食物交易保護紀錄無法安全讀取，請聯絡管理員。';
+    noticeClass = ' warning';
+  } else if (foodRecord.kind === 'invalid' || foodRecord.kind === 'storage_error') {
+    notice = foodRecord.kind === 'storage_error'
+      ? '瀏覽器無法安全讀取未決交易，請勿重複操作。'
+      : '未決食物交易資料損壞，已保留原紀錄，請聯絡管理員。';
+    noticeClass = ' warning';
+  } else if (foodRecord.kind === 'valid') {
+    const pending = foodRecord.pending;
+    const meta = getPetFoodMeta_(pending.foodId);
+    notice = state.message || ('有一筆「' + meta.name + '」' + (pending.action === 'buyPetFood' ? '購買' : '餵食') + '待後端確認。');
+    noticeClass = ' warning';
+    if (!busy && token && !treePending && !accessoryBlocked && !state.guarded) {
+      resumeHtml = `<button class="tree-action-btn pet-food-resume-btn" onclick="resumePendingPetFood_('${childId}')">繼續確認原請求</button>`;
+    } else if (!token) {
+      resumeHtml = `<button class="tree-action-btn pet-food-resume-btn" onclick="openPetSetup('link_existing_pet')">重新連結這台裝置</button>`;
+    }
+  } else if (treePending) {
+    notice = '有一筆果實交易待確認，完成後才能購買或餵食。'; noticeClass = ' warning';
+  } else if (accessoryBlocked) {
+    notice = '有一筆配件交易待確認，完成後才能購買或餵食。'; noticeClass = ' warning';
+  } else if (!token) {
+    notice = '連結這台裝置後，才能向後端購買或餵食。'; noticeClass = ' warning';
+  } else if (state.message) {
+    notice = state.message;
+    noticeClass = state.status === 'blocked' || state.status === 'locked' ? ' warning' : '';
+  }
+
+  const cards = PET_FOOD_CATALOG_.map(item => {
+    const last = state.lastConfirmed[item.foodId];
+    const stock = last
+      ? ((last.action === 'openTreeReward' ? '本次開獎後' : '本次操作後') + '，後端確認：' + last.quantityAfter + ' 份')
+      : '庫存：尚未從後端確認';
+    const disabled = actionsBlocked ? ' disabled' : '';
+    return `<div class="pet-food-card"><div class="pet-food-emoji">${item.emoji}</div><div class="pet-food-body"><div class="pet-food-name">${item.name}</div><div class="pet-food-desc">購買 ${item.priceCoins} 代幣 · 餵食 +${item.effectExp} EXP</div><div class="pet-food-stock">${stock}</div></div><div class="pet-food-actions"><button class="pet-feed-btn pet-buy-btn" aria-label="購買${item.name}" onclick="petBuyFood('${item.foodId}')"${disabled}>購買</button><button class="pet-feed-btn" aria-label="餵食${item.name}" onclick="petFeed('${item.foodId}')"${disabled}>餵食</button></div></div>`;
+  }).join('');
+  grid.setAttribute('aria-busy', busy ? 'true' : 'false');
+  grid.innerHTML = `<div class="pet-food-notice${noticeClass}">${notice}${resumeHtml}</div>${cards}`;
 }
 
 function petBouncePortrait() {
@@ -4390,7 +4858,7 @@ function petTouch() {
 }
 
 function petFeed(foodId) {
-  showToast('🎒 真實背包與餵食功能將在後續開放', 'warn');
+  return startPetFoodAction_('feedPetFood', foodId);
 }
 
 function petBath() {
